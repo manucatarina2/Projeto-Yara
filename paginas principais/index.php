@@ -41,309 +41,363 @@ sort($paises); // Ordenar alfabeticamente
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
   <style>
-    /* Estilos para navbar reorganizada */
-    .navbar-container {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 20px 40px;
-      background-color: white;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
+/* Estilos para navbar reorganizada */
+.navbar-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 40px;
+  background-color: white;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
 
-    .navbar-logo {
-      flex: 0 0 auto;
-    }
+.navbar-logo {
+  flex: 0 0 auto;
+}
 
-    .navbar-logo img {
-      height: 50px;
-      width: auto;
-    }
+.navbar-logo img {
+  height: 50px;
+  width: auto;
+}
 
-    .navbar-menu {
-      display: flex;
-      gap: 40px;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      flex: 1;
-      justify-content: center;
-    }
+.navbar-menu {
+  display: flex;
+  gap: 40px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  justify-content: center;
+}
 
-    .navbar-menu a {
-      text-decoration: none;
-      color: #000;
-      font-size: 14px;
-      letter-spacing: 0.5px;
-      transition: color 0.3s;
-      position: relative;
-      font-weight: 500;
-    }
+.navbar-menu a {
+  text-decoration: none;
+  color: #000;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  transition: color 0.3s;
+  position: relative;
+  font-weight: 500;
+}
 
-    .navbar-menu a:hover {
-      color: #888;
-    }
+.navbar-menu a:hover {
+  color: #888;
+}
 
-    .navbar-menu a::after {
-      content: '';
-      position: absolute;
-      bottom: -5px;
-      left: 0;
-      width: 0;
-      height: 1px;
-      background-color: #000;
-      transition: width 0.3s;
-    }
+.navbar-menu a::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background-color: #000;
+  transition: width 0.3s;
+}
 
-    .navbar-menu a:hover::after {
-      width: 100%;
-    }
+.navbar-menu a:hover::after {
+  width: 100%;
+}
 
-    .navbar-icons {
-      display: flex;
-      gap: 25px;
-      align-items: center;
-      flex: 0 0 auto;
-    }
+.navbar-icons {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex: 0 0 auto;
+}
 
-    /* Ícones bonitos e minimalistas */
-    .nav-icon {
-      width: 24px;
-      height: 24px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
+/* Barra de pesquisa */
+.search-container {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
 
-    .nav-icon:hover {
-      transform: translateY(-2px);
-      color: #e91e63;
-    }
+.search-bar {
+  display: flex;
+  align-items: center;
+  background: #f8f8f8;
+  border-radius: 20px;
+  padding: 6px 12px;
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+  position: relative;
+}
 
-    .nav-icon i {
-      font-size: 20px;
-      color: #333;
-      transition: color 0.3s ease;
-    }
+.search-bar:hover,
+.search-bar:focus-within {
+  background: white;
+  border-color: #e91e63;
+  box-shadow: 0 2px 8px rgba(233, 30, 99, 0.1);
+}
 
-    .nav-icon:hover i {
-      color: #e91e63;
-    }
+.search-bar input {
+  border: none;
+  background: none;
+  outline: none;
+  padding: 0 8px;
+  font-size: 12px;
+  width: 150px;
+  color: #333;
+}
 
-    /* Ícone de pesquisa especial */
-    .search-icon {
-      position: relative;
-    }
+.search-bar input::placeholder {
+  color: #999;
+}
 
-    .search-icon .search-bar {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      background: white;
-      padding: 15px;
-      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-      border-radius: 10px;
-      display: none;
-      z-index: 1000;
-      min-width: 280px;
-      border: 1px solid #f0f0f0;
-    }
+.search-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  transition: color 0.3s;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
-    .search-icon:hover .search-bar,
-    .search-bar:hover {
-      display: block;
-    }
+.search-icon-btn:hover {
+  color: #e91e63;
+}
 
-    .search-bar input {
-      width: 100%;
-      padding: 12px 15px;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.3s;
-    }
+/* Resultados da pesquisa */
+.resultados-pesquisa {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  max-height: 300px;
+  overflow-y: auto;
+  display: none;
+  z-index: 1001;
+  border: 1px solid #f0f0f0;
+}
 
-    .search-bar input:focus {
-      border-color: #e91e63;
-    }
+.resultados-pesquisa.mostrar {
+  display: block;
+}
 
-    /* Ícone do usuário com dropdown */
-    .user-icon {
-      position: relative;
-    }
+.resultado-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  border-bottom: 1px solid #f5f5f5;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
 
-    .user-dropdown {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-      padding: 10px 0;
-      min-width: 180px;
-      display: none;
-      z-index: 1000;
-      border: 1px solid #f0f0f0;
-    }
+.resultado-item:hover {
+  background: #f8f8f8;
+}
 
-    .user-icon:hover .user-dropdown,
-    .user-dropdown:hover {
-      display: block;
-    }
+.resultado-item:last-child {
+  border-bottom: none;
+}
 
-    .user-dropdown a {
-      display: block;
-      padding: 12px 20px;
-      text-decoration: none;
-      color: #333;
-      font-size: 14px;
-      transition: background-color 0.3s;
-    }
+.resultado-item img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-right: 12px;
+}
 
-    .user-dropdown a:hover {
-      background: #f8f8f8;
-      color: #e91e63;
-    }
+.resultado-info h4 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
 
-    .user-dropdown .sair {
-      color: #e74c3c;
-      border-top: 1px solid #f0f0f0;
-      margin-top: 8px;
-      padding-top: 12px;
-    }
+.resultado-info .preco {
+  color: #e91e63;
+  font-weight: 600;
+  font-size: 12px;
+}
 
-    /* Ícone do carrinho com contador */
-    .cart-icon {
-      position: relative;
-    }
+/* Linha divisória */
+.icon-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  margin: 0 5px;
+}
 
-    .cart-count {
-      position: absolute;
-      top: -8px;
-      right: -8px;
-      background: #e91e63;
-      color: white;
-      border-radius: 50%;
-      width: 18px;
-      height: 18px;
-      font-size: 11px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 600;
-    }
+/* Ícones finos e minimalistas */
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
-    /* Foto do usuário logado */
-    .user-avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 2px solid #f0f0f0;
-      transition: border-color 0.3s;
-    }
+.nav-icon:hover {
+  transform: translateY(-1px);
+  color: #e91e63;
+}
 
-    .user-avatar:hover {
-      border-color: #e91e63;
-    }
+.nav-icon i {
+  font-size: 16px;
+  color: #333;
+  transition: color 0.3s ease;
+  font-weight: 300;
+}
 
-    .avatar-placeholder {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #fe7db9, #e91e63);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: 600;
-      font-size: 14px;
-      border: 2px solid #f0f0f0;
-      transition: all 0.3s;
-    }
+.nav-icon:hover i {
+  color: #e91e63;
+}
 
-    .avatar-placeholder:hover {
-      transform: scale(1.05);
-      border-color: #e91e63;
-    }
+/* Ícone do usuário com dropdown */
+.user-icon {
+  position: relative;
+}
 
-    /* Estilos para dropdowns do menu */
-    .menu-item { 
-      position: relative; 
-      display: flex; 
-      align-items: center; 
-    } 
+.user-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  padding: 8px 0;
+  min-width: 160px;
+  display: none;
+  z-index: 1000;
+  border: 1px solid #f0f0f0;
+}
 
-    .dropdown { 
-      position: absolute; 
-      top: calc(100% + 8px); 
-      left: 50%; 
-      transform: translateX(-50%); 
-      background: #fff; 
-      padding: 30px 80px; 
-      box-shadow: 0px 4px 14px rgba(0,0,0,0.15); 
-      border-radius: 2px; 
-      display: none; 
-      gap: 120px; 
-      z-index: 9999; 
-      white-space: nowrap; 
-    } 
+.user-icon:hover .user-dropdown,
+.user-dropdown:hover {
+  display: block;
+}
 
-    .menu-item:hover .dropdown, .dropdown:hover { 
-      display: flex; 
-    } 
+.user-dropdown a {
+  display: block;
+  padding: 10px 16px;
+  text-decoration: none;
+  color: #333;
+  font-size: 13px;
+  transition: background-color 0.3s;
+}
 
-    .dropdown h4 { 
-      font-size: 14px; 
-      text-transform: uppercase; 
-      margin-bottom: 10px; 
-      border-bottom: 1px solid #000; 
-      padding-bottom: 4px; 
-    } 
+.user-dropdown a:hover {
+  background: #f8f8f8;
+  color: #e91e63;
+}
 
-    .dropdown a { 
-      display: block; 
-      font-size: 13px; 
-      color: #000; 
-      margin: 7px 0; 
-      text-decoration: none; 
-      cursor: pointer; 
-    }
+.user-dropdown .sair {
+  color: #e74c3c;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 6px;
+  padding-top: 10px;
+}
 
-    /* Ajustes para responsividade */
-    @media (max-width: 768px) {
-      .navbar-container {
-        padding: 15px 20px;
-        flex-direction: column;
-        gap: 15px;
-      }
-      
-      .navbar-menu {
-        gap: 20px;
-        order: 2;
-      }
-      
-      .navbar-icons {
-        gap: 20px;
-        order: 3;
-      }
-      
-      .navbar-logo {
-        order: 1;
-      }
-    }
+/* Ícone do carrinho com contador */
+.cart-icon {
+  position: relative;
+}
+
+.cart-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #e91e63;
+  color: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+}
+
+/* Estilos para dropdowns do menu */
+.menu-item { 
+  position: relative; 
+  display: flex; 
+  align-items: center; 
+} 
+
+.dropdown { 
+  position: absolute; 
+  top: calc(100% + 8px); 
+  left: 50%; 
+  transform: translateX(-50%); 
+  background: #fff; 
+  padding: 25px 60px; 
+  box-shadow: 0px 4px 14px rgba(0,0,0,0.15); 
+  border-radius: 2px; 
+  display: none; 
+  gap: 100px; 
+  z-index: 9999; 
+  white-space: nowrap; 
+} 
+
+.menu-item:hover .dropdown, .dropdown:hover { 
+  display: flex; 
+} 
+
+.dropdown h4 { 
+  font-size: 13px; 
+  text-transform: uppercase; 
+  margin-bottom: 8px; 
+  border-bottom: 1px solid #000; 
+  padding-bottom: 3px; 
+} 
+
+.dropdown a { 
+  display: block; 
+  font-size: 12px; 
+  color: #000; 
+  margin: 6px 0; 
+  text-decoration: none; 
+  cursor: pointer; 
+}
+
+/* Ajustes para responsividade */
+@media (max-width: 768px) {
+  .navbar-container {
+    padding: 15px 20px;
+    flex-direction: column;
+    gap: 15px;
+  }
+  
+  .navbar-menu {
+    gap: 20px;
+    order: 2;
+  }
+  
+  .navbar-icons {
+    gap: 15px;
+    order: 3;
+  }
+  
+  .navbar-logo {
+    order: 1;
+  }
+  
+  .search-bar input {
+    width: 120px;
+  }
+}
   </style>
 </head>
 <body>
 
-<!-- Nova Navbar com Ícones Bonitos -->
+<!-- Nova Navbar com Ícones Finos -->
 <nav class="navbar-container">
   <!-- Logo à esquerda -->
   <div class="navbar-logo">
@@ -370,7 +424,7 @@ sort($paises); // Ordenar alfabeticamente
 
     <!-- Item Acessórios com dropdown -->
     <li class="menu-item">
-      <a href="acessorios.php" class="acessorios-link">ACESSÓRIOS</a>
+      <a href="produtos.php" class="acessorios-link">ACESSÓRIOS</a>
       <div class="dropdown">
         <div>
           <h4>Joias Individuais</h4>
@@ -391,55 +445,50 @@ sort($paises); // Ordenar alfabeticamente
     </li>
   </ul>
   
-  <!-- Ícones bonitos à direita -->
+  <!-- Lupa e ícones à direita -->
   <div class="navbar-icons">
-    <!-- Coração -->
-    <div class="nav-icon heart-icon" id="heartIcon">
-      <i class="far fa-heart"></i>
-    </div>
-    
-    <!-- Pesquisa -->
-    <div class="nav-icon search-icon">
-      <i class="fas fa-search"></i>
+    <!-- Barra de pesquisa -->
+    <div class="search-container">
       <div class="search-bar">
         <input type="text" placeholder="Buscar produtos..." id="inputPesquisa">
+        <button class="search-icon-btn" type="button">
+          <i class="fas fa-search"></i>
+        </button>
         <div class="resultados-pesquisa" id="resultadosPesquisa"></div>
       </div>
     </div>
     
+    <!-- Linha divisória transparente -->
+    <div class="icon-divider"></div>
+    
+    <!-- Ícones finos -->
+    <div class="nav-icon heart-icon" id="heartIcon" onclick="window.location.href='favoritos.php'">
+      <i class="far fa-heart"></i>
+    </div>
+    
     <!-- Usuário -->
     <div class="nav-icon user-icon">
-      <?php if (isset($_SESSION['usuario']) && $_SESSION['usuario']): ?>
-        <?php if (!empty($_SESSION['usuario']['foto'])): ?>
-          <img src="uploads/<?php echo $_SESSION['usuario']['foto']; ?>" alt="Foto do usuário" class="user-avatar">
-        <?php else: ?>
-          <div class="avatar-placeholder">
-            <?php echo substr($_SESSION['usuario']['nome'], 0, 1); ?>
-          </div>
-        <?php endif; ?>
-        
-        <div class="user-dropdown">
+      <i class="far fa-user"></i>
+      <div class="user-dropdown">
+        <?php if (isset($_SESSION['usuario']) && $_SESSION['usuario']): ?>
           <a href="perfil.php">Meu Perfil</a>
           <a href="pedidos.php">Meus Pedidos</a>
           <a href="favoritos.php">Favoritos</a>
           <a href="#" class="sair" id="sairConta">Sair</a>
-        </div>
-      <?php else: ?>
-        <i class="far fa-user"></i>
-        <div class="user-dropdown">
+        <?php else: ?>
           <a href="#" id="openLoginMenu">Fazer Login</a>
           <a href="#" id="openSignupMenu">Cadastrar</a>
-        </div>
-      <?php endif; ?>
+        <?php endif; ?>
+      </div>
     </div>
     
-    <!-- Sacola -->
     <div class="nav-icon cart-icon" id="carrinho">
       <i class="fas fa-shopping-bag"></i>
       <span class="cart-count"><?php echo isset($_SESSION['carrinho']) ? array_sum($_SESSION['carrinho']) : 0; ?></span>
     </div>
   </div>
 </nav>
+
 
 <!-- Barra de Pesquisa (mantida do código original) -->
 <div class="barra-pesquisa" id="barraPesquisaMinimalista">
@@ -1141,46 +1190,173 @@ function agendarVisita() {
 
 // === Funções JavaScript principais ===
 document.addEventListener('DOMContentLoaded', function() {
-    // --- MENU DO USUÁRIO MINIMALISTA ---
-    const usuarioLogadoMinimalista = document.getElementById('usuarioLogadoMinimalista');
-    const menuUsuarioMinimalista = document.getElementById('menuUsuarioMinimalista');
+    // --- BARRA DE PESQUISA ---
+    const inputPesquisa = document.getElementById('inputPesquisa');
+    const resultadosPesquisa = document.getElementById('resultadosPesquisa');
+    const searchIconBtn = document.querySelector('.search-icon-btn');
 
-    if (usuarioLogadoMinimalista && menuUsuarioMinimalista) {
-        usuarioLogadoMinimalista.addEventListener('click', function(e) {
-            e.stopPropagation();
-            menuUsuarioMinimalista.classList.toggle('mostrar');
-        });
-
-        // Fechar menu ao clicar fora
-        document.addEventListener('click', function() {
-            menuUsuarioMinimalista.classList.remove('mostrar');
-        });
+    // Função para buscar produtos
+    function buscarProdutos(termo) {
+        if (termo.length > 2) {
+            fetch('buscar_produtos.php?termo=' + encodeURIComponent(termo))
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Erro na rede: ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (resultadosPesquisa) {
+                        resultadosPesquisa.innerHTML = '';
+                        
+                        if (data.success && data.produtos && data.produtos.length > 0) {
+                            data.produtos.forEach(produto => {
+                                const item = document.createElement('div');
+                                item.className = 'resultado-item';
+                                
+                                const imagemSrc = produto.imagem && produto.imagem !== '' ? 
+                                    `imgs/${produto.imagem}` : 'imgs/produto-padrao.png';
+                                
+                                item.innerHTML = `
+                                    <img src="${imagemSrc}" alt="${produto.nome}" onerror="this.src='imgs/produto-padrao.png'">
+                                    <div class="resultado-info">
+                                        <h4>${produto.nome}</h4>
+                                        <div class="preco">R$ ${parseFloat(produto.preco).toFixed(2)}</div>
+                                    </div>
+                                `;
+                                
+                                item.addEventListener('click', function() {
+                                    window.location.href = `produto_detalhe.php?id=${produto.id}`;
+                                });
+                                
+                                resultadosPesquisa.appendChild(item);
+                            });
+                            resultadosPesquisa.classList.add('mostrar');
+                        } else {
+                            resultadosPesquisa.innerHTML = `
+                                <div style="padding: 20px; text-align: center; color: #666;">
+                                    <i class="fas fa-search" style="font-size: 20px; margin-bottom: 8px;"></i>
+                                    <p style="font-size: 12px; margin: 0;">Nenhum produto encontrado</p>
+                                </div>
+                            `;
+                            resultadosPesquisa.classList.add('mostrar');
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro na busca:', error);
+                    if (resultadosPesquisa) {
+                        resultadosPesquisa.innerHTML = `
+                            <div style="padding: 20px; text-align: center; color: #e74c3c;">
+                                <i class="fas fa-exclamation-triangle" style="font-size: 20px; margin-bottom: 8px;"></i>
+                                <p style="font-size: 12px; margin: 0;">Erro ao buscar produtos</p>
+                            </div>
+                        `;
+                        resultadosPesquisa.classList.add('mostrar');
+                    }
+                });
+        } else {
+            resultadosPesquisa.classList.remove('mostrar');
+            resultadosPesquisa.innerHTML = '';
+        }
     }
 
-    // --- BARRA DE PESQUISA MINIMALISTA ---
-    const abrirPesquisaMinimalista = document.getElementById('abrirPesquisaMinimalista');
-    const barraPesquisaMinimalista = document.getElementById('barraPesquisaMinimalista');
-    const inputPesquisaMinimalista = document.getElementById('inputPesquisaMinimalista');
-    const resultadosPesquisaMinimalista = document.getElementById('resultadosPesquisaMinimalista');
+    // Evento de input na pesquisa
+    if (inputPesquisa) {
+        inputPesquisa.addEventListener('input', function() {
+            const termo = this.value.trim();
+            buscarProdutos(termo);
+        });
 
-    if (abrirPesquisaMinimalista) {
-        abrirPesquisaMinimalista.addEventListener('click', function(e) {
-            e.stopPropagation();
-            barraPesquisaMinimalista.classList.toggle('ativa');
-            if (barraPesquisaMinimalista.classList.contains('ativa')) {
-                inputPesquisaMinimalista.focus();
+        // Fechar resultados ao clicar fora
+        document.addEventListener('click', function(e) {
+            if (!inputPesquisa.contains(e.target) && !resultadosPesquisa.contains(e.target) && !searchIconBtn.contains(e.target)) {
+                resultadosPesquisa.classList.remove('mostrar');
+            }
+        });
+
+        // Enter na pesquisa
+        inputPesquisa.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const termo = this.value.trim();
+                if (termo.length > 0) {
+                    window.location.href = `produtos.php?busca=${encodeURIComponent(termo)}`;
+                }
             }
         });
     }
 
-    document.addEventListener('click', function(e) {
-        if (barraPesquisaMinimalista && !barraPesquisaMinimalista.contains(e.target) && e.target !== abrirPesquisaMinimalista) {
-            barraPesquisaMinimalista.classList.remove('ativa');
-        }
-    });
+    // Botão de pesquisa
+    if (searchIconBtn) {
+        searchIconBtn.addEventListener('click', function() {
+            const termo = inputPesquisa.value.trim();
+            if (termo.length > 0) {
+                window.location.href = `produtos.php?busca=${encodeURIComponent(termo)}`;
+            } else {
+                inputPesquisa.focus();
+            }
+        });
+    }
 
-    // Resto do código JavaScript permanece igual...
-    // [O restante do código JavaScript permanece inalterado]
+    // --- MENU DO USUÁRIO ---
+    const userIcon = document.querySelector('.user-icon');
+    const userDropdown = document.querySelector('.user-dropdown');
+    const sairConta = document.getElementById('sairConta');
+
+    if (userIcon && userDropdown) {
+        userIcon.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+
+        // Fechar dropdown ao clicar fora
+        document.addEventListener('click', function() {
+            userDropdown.style.display = 'none';
+        });
+    }
+
+    // Logout
+    if (sairConta) {
+        sairConta.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            fetch('processa_form.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'acao=logout'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                }
+            });
+        });
+    }
+
+    // Login e Cadastro
+    const openLoginMenu = document.getElementById('openLoginMenu');
+    const openSignupMenu = document.getElementById('openSignupMenu');
+
+    if (openLoginMenu) {
+        openLoginMenu.addEventListener('click', function(e) {
+            e.preventDefault();
+            // Abrir modal de login (implementar conforme necessário)
+            console.log('Abrir modal de login');
+        });
+    }
+
+    if (openSignupMenu) {
+        openSignupMenu.addEventListener('click', function(e) {
+            e.preventDefault();
+            // Abrir modal de cadastro (implementar conforme necessário)
+            console.log('Abrir modal de cadastro');
+        });
+    }
+
+    // Debug: Verificar se o ícone do carrinho está presente
+    console.log('Ícone do carrinho:', document.querySelector('.cart-icon'));
 });
 </script>
 </body>
