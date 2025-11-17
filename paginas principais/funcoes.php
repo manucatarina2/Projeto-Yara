@@ -124,21 +124,21 @@ function getProdutosDestaque() {
         [
             'id' => 1,
             'nome' => 'Conjunto Encanto Lilás',
-            'imagem' => '../imgs/2novidades.png',
+            'imagem' => '../paginas principais/imgs/2novidades.png',
             'preco' => 89.90,
             'categoria' => 'conjuntos'
         ],
         [
             'id' => 2,
             'nome' => 'Espiral de Serenidade',
-            'imagem' => '../imgs/1novidades.png',
+            'imagem' => '../paginas principais/imgs/1novidades.png',
             'preco' => 65.50,
             'categoria' => 'colares'
         ],
         [
             'id' => 3,
             'nome' => 'Conjunto Coração de Rubi',
-            'imagem' => '../imgs/3novidades.jpg',
+            'imagem' => '../paginas principais/imgs/3novidades.jpg',
             'preco' => 120.00,
             'categoria' => 'conjuntos'
         ]
@@ -264,9 +264,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo json_encode(['success' => true, 'total_carrinho' => array_sum($_SESSION['carrinho'])]);
                 }
                 exit;
+                
+            case 'buscar_produtos':
+                if (isset($_POST['termo'])) {
+                    $termo = $_POST['termo'];
+                    $produtos = buscarProdutos($termo);
+                    
+                    // Se não encontrou produtos no banco, usa os produtos de exemplo
+                    if (empty($produtos)) {
+                        $produtos = getProdutosDestaque();
+                    }
+                    
+                    // Formatar os dados para o JSON - MANTÉM OS CAMINHOS ORIGINAIS
+                    $produtosFormatados = [];
+                    foreach ($produtos as $produto) {
+                        $produtosFormatados[] = [
+                            'id' => $produto['id'],
+                            'nome' => $produto['nome'],
+                            'preco' => $produto['preco'],
+                            'imagem' => $produto['imagem'] // Mantém o caminho original
+                        ];
+                    }
+                    
+                    echo json_encode([
+                        'success' => true,
+                        'produtos' => $produtosFormatados
+                    ]);
+                } else {
+                    echo json_encode([
+                        'success' => false,
+                        'produtos' => []
+                    ]);
+                }
+                exit;
         }
     }
 }
+
 // Função para buscar endereços do usuário
 function getEnderecosUsuario($usuarioId) {
     // Em um sistema real, isso viria do banco de dados

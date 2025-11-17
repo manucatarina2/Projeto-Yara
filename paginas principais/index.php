@@ -5,6 +5,23 @@ require_once 'funcoes.php';
 // Buscar produtos em destaque
 $produtosDestaque = getProdutosDestaque();
 
+// CORREÇÃO DOS CAMINHOS DAS IMAGENS - CAMINHO CORRETO
+function corrigirCaminhoImagem($caminho) {
+    // Se já começar com o caminho correto, mantém
+    if (strpos($caminho, '../paginas principais/imgs/') === 0) {
+        return $caminho;
+    }
+    
+    // Se tiver '../imgs/', substitui pelo caminho correto
+    if (strpos($caminho, '../imgs/') === 0) {
+        return str_replace('../imgs/', '../paginas principais/imgs/', $caminho);
+    }
+    
+    // Se for apenas o nome do arquivo, adiciona o caminho completo
+    return '../paginas principais/imgs/' . $caminho;
+}
+
+
 // Lista de países (lista completa)
 $paises = [
     'Brasil', 'Afeganistão', 'África do Sul', 'Albânia', 'Alemanha', 'Andorra', 'Angola', 'Antígua e Barbuda',
@@ -420,12 +437,12 @@ sort($paises); // Ordenar alfabeticamente
     <li class="menu-item">
       <a href="sobre.php" class="sobre-link">SOBRE</a>
       <div class="dropdown">
-        <div>
-          <h4>Informações</h4>
-          <a href="servicos.php">Serviços</a>
-          <a href="contato.php">Contato</a>
-        </div>
-      </div>
+  <div>
+    <h4>Informações</h4>
+    <a href="servicos.php">Serviços</a>
+    <a href="#" id="openContactDropdown">Contato</a>
+  </div>
+</div>
     </li>
     
     <li><a href="novidades.php">NOVIDADES</a></li>
