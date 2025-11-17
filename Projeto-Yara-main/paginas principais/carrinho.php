@@ -6,28 +6,24 @@ $carrinhoItens = [];
 $subtotal = 0;
 $totalItens = 0;
 
-// Verifica carrinho na sessão
+// Verifica carrinho na sessão e busca dados reais do banco
 if (isset($_SESSION['carrinho']) && count($_SESSION['carrinho']) > 0) {
-    
-    // Pega IDs e sanitiza para evitar SQL Injection
     $ids = array_keys($_SESSION['carrinho']);
     $ids = array_map('intval', $ids);
     $idsString = implode(',', $ids);
 
     if (!empty($idsString)) {
-        // --- ALTERAÇÃO AQUI: Usando $conexao (MySQLi) ---
+        // Usa MySQLi ($conexao) conforme padrão da sua equipe
         $sql = "SELECT * FROM produtos WHERE id IN ($idsString)";
-        $resultado = $conexao->query($sql); // Usa a seta do objeto mysqli
+        $resultado = $conexao->query($sql);
 
         if ($resultado) {
-            // MySQLi não tem fetchAll direto, usamos o while
             while ($produto = $resultado->fetch_assoc()) {
                 $id = $produto['id'];
                 $qtd = $_SESSION['carrinho'][$id];
                 
                 $produto['quantidade'] = $qtd;
                 $produto['subtotal'] = $produto['preco'] * $qtd;
-                
                 $carrinhoItens[] = $produto;
                 
                 $subtotal += $produto['subtotal'];
@@ -47,18 +43,23 @@ $total = $subtotal + $frete;
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>YARA - Carrinho</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+
 <style>
-  /* (Copie o mesmo CSS do código anterior) */
+  /* Variáveis e Reset */
   :root{ --bg: #ffe7f6; --text: #000; --icon-size: 24px; --logo-height: 60px; --gap: 20px; --container-w: 1100px; --pink-accent: #fe7db9; --btn-primary-bg: #f06ca2; --btn-primary-hover: #e3558f; --dark-gray: #333; }
-  body{ margin:0; font-family: 'Poppins', sans-serif; background: #fff; }
+  body{ margin:0; font-family: 'Poppins', sans-serif; background: #fff; display: flex; flex-direction: column; min-height: 100vh; }
+  
+  /* Header */
   header{ width:100%; background: var(--bg); padding: 14px 20px 6px; box-sizing: border-box; }
   .container{ max-width: var(--container-w); margin: 0 auto; }
   .top-row{ display:flex; justify-content:space-between; align-items:flex-start; gap: 10px; }
   .top-left{ display:flex; gap: 14px; align-items:center; }
   .top-left a{ text-decoration:none; color:var(--text); font-size:12px; letter-spacing:0.5px; position:relative; padding-bottom:4px; cursor:pointer; }
   .top-left a:hover::after{ content:''; position:absolute; left:0; bottom:-4px; width:100%; height:2px; background:var(--text); }
-  .top-right-icons{ display:flex; gap:12px; align-items:center; }
+  .top-right-icons{ display:flex; gap:12px; align-items:center; position: relative; }
   .top-right-icons img{ width: var(--icon-size); height: var(--icon-size); display:block; object-fit:contain; cursor:pointer; }
   .logo-row{ display:flex; justify-content:center; align-items:center; margin-top:4px; }
   .logo-row img{ height: var(--logo-height); width: auto; display:block; }
@@ -75,7 +76,9 @@ $total = $subtotal + $frete;
   .dropdown h4 { font-size: 14px; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #000; padding-bottom: 4px; } 
   .dropdown a { display: block; font-size: 13px; color: #000; margin: 7px 0; text-decoration: none; cursor: pointer; } 
   .dropdown a:hover { text-decoration: underline; }
-  .cart-section { padding: 60px 20px; background-color: #fff; }
+
+  /* Carrinho */
+  .cart-section { padding: 60px 20px; background-color: #fff; flex: 1; }
   .cart-container { max-width: 1100px; margin: 0 auto; }
   .cart-container h1 { font-family: 'Playfair Display', serif; font-size: 38px; font-weight: 700; letter-spacing: 1.5px; margin-bottom: 40px; text-transform: uppercase; text-align: center; color: var(--btn-primary-bg); }
   .cart-wrapper { display: flex; gap: 40px; flex-wrap: wrap; }
@@ -110,7 +113,8 @@ $total = $subtotal + $frete;
   .empty-cart h3 { font-size: 1.5em; margin-bottom: 10px; color: #333; }
   .empty-cart p { margin-bottom: 30px; }
   @media (max-width: 900px) { .cart-wrapper { flex-direction: column-reverse; } }
-  @media (max-width: 700px) { .cart-table thead { display: none; } .cart-table tbody tr { display: block; padding: 20px 0; } .cart-table td { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; text-align: right; } .cart-table td:before { content: attr(data-label); font-weight: 600; color: #555; text-align: left; margin-right: 15px; } .cart-item-details { padding: 0; } .cart-table td[data-label="Produto"] { display: block; text-align: left; } .cart-table td[data-label="Produto"]:before { display: none; } .cart-item-remove { justify-content: flex-end; } .cart-table td[data-label="Remover"] { padding-top: 15px; } .cart-table td[data-label="Remover"]:before { display: none; } }
+  
+  /* Usuario Logado e Carrinho Count */
   .usuario-logado { position: relative; cursor: pointer; }
   .menu-usuario { position: absolute; top: 100%; right: 0; background: white; border-radius: 5px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); padding: 10px 0; min-width: 150px; display: none; z-index: 1000; }
   .menu-usuario.mostrar { display: block; }
@@ -118,7 +122,53 @@ $total = $subtotal + $frete;
   .menu-usuario a:hover { background: #f5f5f5; }
   .menu-usuario .sair { color: #e74c3c; border-top: 1px solid #eee; margin-top: 5px; padding-top: 8px; }
   .carrinho-count { position: absolute; top: -8px; right: -8px; background: var(--pink-accent); color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
-  .top-right-icons { position: relative; }
+
+  /* =========================
+     ESTILO DO FOOTER (Igual Aneis)
+     ========================= */
+  .footer {
+      background-color: #ffe7f6; /* Fundo Rosa igual aos outros */
+      padding: 60px 20px 20px;
+      margin-top: auto;
+      width: 100%;
+      box-sizing: border-box;
+  }
+  .footer-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      gap: 40px;
+      flex-wrap: wrap;
+  }
+  .footer-col h3 {
+      font-family: 'Playfair Display', serif;
+      margin-bottom: 20px;
+      color: #333;
+  }
+  .footer-col h4 {
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #333;
+      text-transform: uppercase;
+  }
+  .footer-col ul { list-style: none; padding: 0; margin: 0; }
+  .footer-col ul li { margin-bottom: 10px; }
+  .footer-col ul li a { text-decoration: none; color: #555; transition: color 0.3s; }
+  .footer-col ul li a:hover { color: #e91e7d; }
+  .social a { font-size: 20px; color: #555; margin-right: 15px; transition: color 0.3s; }
+  .social a:hover { color: #e91e7d; }
+  .footer-bottom {
+      text-align: center;
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #ffcce6;
+      color: #777;
+      font-size: 14px;
+  }
+  @media (max-width: 768px) {
+      .footer-container { flex-direction: column; text-align: center; }
+  }
 </style>
 </head>
 <body>
@@ -188,7 +238,7 @@ $total = $subtotal + $frete;
           </div> 
         </div> 
         <div class="menu-icons" aria-hidden="true"> 
-          <img src="imgs/coracao.png" alt="Favoritos" id="heartIcon">
+          <img src="imgs/coracao.png" alt="Favoritos" id="heartIcon"> 
           <div class="menu-item">
             <img src="imgs/lupa.png" alt="Buscar" id="abrirPesquisa">
             <div class="barra-pesquisa" id="barraPesquisa">
@@ -293,9 +343,38 @@ $total = $subtotal + $frete;
   </div>
 </main>
 
+<footer class="footer">
+  <div class="footer-container">
+    <div class="footer-col">
+      <h3>YARA</h3>
+      <p>Força e delicadeza em joias que expressam identidade e presença.</p>
+      <div class="social">
+        <a href="#"><i class="fab fa-instagram"></i></a>
+        <a href="#"><i class="fab fa-facebook"></i></a>
+        <a href="#"><i class="fab fa-whatsapp"></i></a>
+      </div>
+    </div>
+    <div class="footer-col">
+      <h4>YARA</h4>
+      <ul>
+        <li><a href="sobre.php">Sobre nós</a></li>
+        <li><a href="produtos.php">Coleções</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Atendimento</h4>
+      <p><i class="fa-regular fa-envelope"></i> contato@yara.com</p>
+      <p><i class="fa-solid fa-phone"></i> (11) 99999-9999</p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>@ 2025 Yara. Todos os direitos reservados</p>
+  </div>
+</footer>
+
 <?php if(file_exists('modais.php')) include 'modais.php'; ?>
 
-<script>
+<script src="script.js"></script> <script>
 const SHIPPING_COST = 15.00;
 
 function atualizarQuantidade(produtoId, novaQuantidade) {
@@ -316,15 +395,46 @@ function atualizarQuantidade(produtoId, novaQuantidade) {
 }
 
 function removerItem(produtoId) {
-  if (confirm('Tem certeza que deseja remover este item do carrinho?')) {
-    fetch('funcoes.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'acao=atualizar_carrinho&produto_id=' + produtoId + '&quantidade=0'
-    })
-    .then(response => response.json())
-    .then(data => { if(data.success) location.reload(); });
-  }
+  // Alerta Toast no canto superior direito
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: 'warning',
+    title: 'Remover item?',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#333',
+    confirmButtonText: 'Sim',
+    cancelButtonText: 'Não',
+    timer: null,
+    didOpen: (toast) => {
+       toast.addEventListener('mouseenter', Swal.stopTimer)
+       toast.addEventListener('mouseleave', Swal.resumeTimer)
+    }
+  }).then((result) => {
+    if (result.isConfirmed) {
+      fetch('funcoes.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'acao=atualizar_carrinho&produto_id=' + produtoId + '&quantidade=0'
+      })
+      .then(response => response.json())
+      .then(data => {
+          if(data.success) {
+              Swal.fire({
+                  toast: true,
+                  position: 'top-end',
+                  icon: 'success',
+                  title: 'Item removido!',
+                  showConfirmButton: false,
+                  timer: 1000
+              }).then(() => {
+                  location.reload();
+              });
+          }
+      });
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -350,24 +460,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Menu User
-  const usuarioLogado = document.getElementById('usuarioLogado');
-  const menuUsuario = document.getElementById('menuUsuario');
-  if (usuarioLogado) {
-    usuarioLogado.addEventListener('click', (e) => { e.stopPropagation(); menuUsuario.classList.toggle('mostrar'); });
-    document.addEventListener('click', () => menuUsuario.classList.remove('mostrar'));
-  }
-  // Logout
-  const sairConta = document.getElementById('sairConta');
-  if (sairConta) {
-    sairConta.addEventListener('click', (e) => {
-       e.preventDefault();
-       if(confirm('Sair?')) {
-           fetch('funcoes.php', { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body:'acao=logout' })
-           .then(() => window.location.href='index.php');
-       }
-    });
-  }
   const heart = document.getElementById('heartIcon');
   if(heart) heart.addEventListener('click', () => window.location.href='favoritos.php');
 });
