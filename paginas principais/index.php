@@ -337,7 +337,7 @@ sort($paises); // Ordenar alfabeticamente
   left: 50%; 
   transform: translateX(-50%); 
   background: #fff; 
-  padding: 25px 60px; 
+  padding: 20px 40px; 
   box-shadow: 0px 4px 14px rgba(0,0,0,0.15); 
   border-radius: 2px; 
   display: none; 
@@ -545,27 +545,27 @@ sort($paises); // Ordenar alfabeticamente
 <section class="categorias-section">
   <h2>COMPRE POR CATEGORIA</h2>
   <div class="categorias-grid">
-    <a href="produtos.php?categoria=colares" class="categoria">
+    <a href="colares.php" class="categoria">
       <div class="card"><img src="imgs/categcolar.png" alt="Colares"></div>
       <div class="categoria-nome">Colares</div>
     </a>
-    <a href="produtos.php?categoria=pulseiras" class="categoria">
+    <a href="pulseiras.php" class="categoria">
       <div class="card"><img src="imgs/categpulseira.png" alt="Pulseiras"></div>
       <div class="categoria-nome">Pulseiras</div>
     </a>
-    <a href="produtos.php?categoria=brincos" class="categoria">
+    <a href="brincos.php" class="categoria">
       <div class="card"><img src="imgs/categbrinco.png" alt="Brincos"></div>
       <div class="categoria-nome">Brincos</div>
     </a>
-    <a href="produtos.php?categoria=braceletes" class="categoria">
+    <a href="braceletes.php" class="categoria">
       <div class="card"><img src="imgs/categbracelete.png" alt="Braceletes"></div>
       <div class="categoria-nome">Braceletes</div>
     </a>
-    <a href="produtos.php?categoria=aneis" class="categoria">
+    <a href="aneis.php" class="categoria">
       <div class="card"><img src="imgs/categanel.png" alt="Anéis"></div>
       <div class="categoria-nome">Anéis</div>
     </a>
-    <a href="produtos.php?categoria=piercings" class="categoria">
+    <a href="piercings.php" class="categoria">
       <div class="card"><img src="imgs/categpiercing.png" alt="Piercings"></div>
       <div class="categoria-nome">Piercings</div>
     </a>
