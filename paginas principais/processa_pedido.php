@@ -23,6 +23,54 @@ switch ($acao) {
     case 'cancelar':
         cancelarPedido($pdo);
         break;
+
+    case 'adicionar_personalizado':
+            // 1. Receber dados da personalização
+            $tipo = $_POST['tipo'] ?? 'Joia';
+            $material = $_POST['material'] ?? '';
+            $pedra = $_POST['pedra'] ?? '';
+            $tamanho = $_POST['tamanho'] ?? '';
+            $gravacao = $_POST['gravacao'] ?? '';
+            $preco = (float)$_POST['preco']; 
+
+            // 2. Montar Nome e Descrição Dinâmicos
+            $nomeProduto = "Personalizado: " . ucfirst($tipo);
+            
+            $descricao = "Joia exclusiva personalizada.\n";
+            $descricao .= "Material: " . ucfirst($material) . "\n";
+            $descricao .= "Pedra: " . ucfirst($pedra) . "\n";
+            $descricao .= "Tamanho: " . $tamanho . "\n";
+            if(!empty($gravacao)) {
+                $descricao .= "Gravação: " . $gravacao;
+            }
+
+            // 3. Definir categoria para o banco (Mapeando para os ENUMs que existem)
+            $mapCategoria = [
+                'Anel' => 'aneis', 'Colar' => 'colares', 'Brinco' => 'brincos', 
+                'Pulseira' => 'pulseiras', 'Bracelete' => 'braceletes'
+            ];
+            $categoriaDb = $mapCategoria[$tipo] ?? 'colares'; // Fallback
+
+            // 4. Salvar como um novo produto no Banco
+            // Usamos uma imagem genérica de personalização
+            $imagem = "personalize-base.png"; 
+            
+            $sql = "INSERT INTO produtos (nome, descricao, preco, categoria, imagem, estoque, disponivel) VALUES (?, ?, ?, ?, ?, 1, 1)";
+            $stmt = $conexao->prepare($sql);
+            $stmt->bind_param("ssdss", $nomeProduto, $descricao, $preco, $categoriaDb, $imagem);
+            
+            if ($stmt->execute()) {
+                $novoId = $stmt->insert_id;
+                
+                // 5. Adicionar esse novo ID ao carrinho
+                adicionarAoCarrinho($novoId);
+                
+                $total_itens = array_sum($_SESSION['carrinho']);
+                echo json_encode(['success' => true, 'total_carrinho' => $total_itens]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Erro ao criar personalização: ' . $stmt->error]);
+            }
+            break;
     default:
         echo json_encode(['success' => false, 'message' => 'Ação inválida']);
 }

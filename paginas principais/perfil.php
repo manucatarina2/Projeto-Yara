@@ -1,6 +1,8 @@
 <?php
-// perfil.php
-require_once 'funcoes.php';
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+require_once 'conexao.php';
 
 // Verificar se usuário está logado
 if (!isset($_SESSION['usuario']) || !$_SESSION['usuario']) {
@@ -10,1444 +12,1428 @@ if (!isset($_SESSION['usuario']) || !$_SESSION['usuario']) {
 
 $usuario = $_SESSION['usuario'];
 
-// Processar atualização de dados se o formulário foi enviado
+// Processar atualização de dados
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['acao']) && $_POST['acao'] === 'atualizar_perfil') {
     $novoNome = trim($_POST['nome']);
     $novoEmail = trim($_POST['email']);
     $senhaAtual = $_POST['senha_atual'] ?? '';
     $novaSenha = $_POST['nova_senha'] ?? '';
-    
-    // Validar dados
+    $telefone = $_POST['telefone'] ?? '';
+    $cpf = $_POST['cpf'] ?? '';
+
     if (empty($novoNome) || empty($novoEmail)) {
         $mensagemErro = "Nome e email são obrigatórios.";
     } else {
-        // Verificar se o email já existe (exceto para o próprio usuário)
-        $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE email = ? AND id != ?");
-        $stmt->execute([$novoEmail, $usuario['id']]);
-        if ($stmt->fetch()) {
-            $mensagemErro = "Este email já está em uso por outro usuário.";
+        // Verifica duplicidade de email
+        $stmt = $conexao->prepare("SELECT id FROM usuarios WHERE email = ? AND id != ?");
+        $stmt->bind_param("si", $novoEmail, $usuario['id']);
+        $stmt->execute();
+        if ($stmt->get_result()->num_rows > 0) {
+            $mensagemErro = "Este email já está em uso.";
         } else {
             try {
-                // Iniciar transação
-                $pdo->beginTransaction();
-                
-                // Atualizar dados básicos
+                // Atualiza dados básicos
                 $sql = "UPDATE usuarios SET nome = ?, email = ?";
+                $types = "ss";
                 $params = [$novoNome, $novoEmail];
-                
-                // Se forneceu senha atual e nova senha, verificar e atualizar
+
+                // Adicionar telefone se fornecido
+                if (!empty($telefone)) {
+                    $sql .= ", telefone = ?";
+                    $types .= "s";
+                    $params[] = $telefone;
+                }
+
+                // Adicionar CPF se fornecido
+                if (!empty($cpf)) {
+                    $sql .= ", cpf = ?";
+                    $types .= "s";
+                    $params[] = $cpf;
+                }
+
+                // Atualiza senha se fornecida
                 if (!empty($senhaAtual) && !empty($novaSenha)) {
-                    // Verificar senha atual
-                    if (password_verify($senhaAtual, $usuario['senha'])) {
+                    // Busca senha atual no banco para verificar hash
+                    $stmtCheck = $conexao->prepare("SELECT senha FROM usuarios WHERE id = ?");
+                    $stmtCheck->bind_param("i", $usuario['id']);
+                    $stmtCheck->execute();
+                    $hashAtual = $stmtCheck->get_result()->fetch_assoc()['senha'];
+
+                    if (password_verify($senhaAtual, $hashAtual) || $senhaAtual === $hashAtual) {
                         $sql .= ", senha = ?";
+                        $types .= "s";
                         $params[] = password_hash($novaSenha, PASSWORD_DEFAULT);
                     } else {
                         throw new Exception("Senha atual incorreta.");
                     }
                 }
-                
-                $sql .= " WHERE id = ?";
-                $params[] = $usuario['id'];
-                
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($params);
-                
-                // Atualizar foto se enviada
+
+                // Upload de Foto
                 if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
-                    $foto = $_FILES['foto'];
-                    $extensao = strtolower(pathinfo($foto['name'], PATHINFO_EXTENSION));
-                    $extensoesPermitidas = ['jpg', 'jpeg', 'png', 'gif'];
-                    
-                    if (in_array($extensao, $extensoesPermitidas)) {
-                        // Verificar tamanho (máximo 2MB)
-                        if ($foto['size'] <= 2 * 1024 * 1024) {
-                            $nomeArquivo = uniqid() . '.' . $extensao;
-                            $caminhoDestino = 'uploads/' . $nomeArquivo;
-                            
-                            // Criar diretório se não existir
-                            if (!is_dir('uploads')) {
-                                mkdir('uploads', 0777, true);
-                            }
-                            
-                            if (move_uploaded_file($foto['tmp_name'], $caminhoDestino)) {
-                                // Remover foto antiga se existir
-                                if (!empty($usuario['foto']) && $usuario['foto'] !== 'default.png') {
-                                    $fotoAntiga = 'uploads/' . $usuario['foto'];
-                                    if (file_exists($fotoAntiga)) {
-                                        unlink($fotoAntiga);
-                                    }
-                                }
-                                
-                                // Atualizar no banco
-                                $stmt = $pdo->prepare("UPDATE usuarios SET foto = ? WHERE id = ?");
-                                $stmt->execute([$nomeArquivo, $usuario['id']]);
-                                $usuario['foto'] = $nomeArquivo;
-                            }
-                        } else {
-                            throw new Exception("A imagem deve ter no máximo 2MB.");
+                    $extensao = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
+                    if (in_array($extensao, ['jpg', 'jpeg', 'png', 'gif'])) {
+                        $nomeArquivo = uniqid() . '.' . $extensao;
+                        if (move_uploaded_file($_FILES['foto']['tmp_name'], 'uploads/' . $nomeArquivo)) {
+                            $sql .= ", foto = ?";
+                            $types .= "s";
+                            $params[] = $nomeArquivo;
+                            $usuario['foto'] = $nomeArquivo; // Atualiza na sessão visualmente
                         }
-                    } else {
-                        throw new Exception("Formato de imagem não suportado. Use JPG, PNG ou GIF.");
                     }
                 }
-                
-                $pdo->commit();
-                
-                // Atualizar dados na sessão
-                $stmt = $pdo->prepare("SELECT *, DATE_FORMAT(data_cadastro, '%Y-%m-%d') as data_cadastro_formatada FROM usuarios WHERE id = ?");
-                $stmt->execute([$usuario['id']]);
-                $usuarioAtualizado = $stmt->fetch();
-                
-                // Manter a senha na sessão (não atualizar)
-                $usuarioAtualizado['senha'] = $usuario['senha'];
-                $_SESSION['usuario'] = $usuarioAtualizado;
-                $usuario = $_SESSION['usuario'];
-                
-                $mensagemSucesso = "Dados atualizados com sucesso!";
-                
+
+                $sql .= " WHERE id = ?";
+                $types .= "i";
+                $params[] = $usuario['id'];
+
+                $stmt = $conexao->prepare($sql);
+                $stmt->bind_param($types, ...$params);
+
+                if ($stmt->execute()) {
+                    // Atualiza sessão
+                    $_SESSION['usuario']['nome'] = $novoNome;
+                    $_SESSION['usuario']['email'] = $novoEmail;
+                    if (!empty($telefone)) $_SESSION['usuario']['telefone'] = $telefone;
+                    if (!empty($cpf)) $_SESSION['usuario']['cpf'] = $cpf;
+                    if (isset($usuario['foto'])) $_SESSION['usuario']['foto'] = $usuario['foto'];
+
+                    $usuario = $_SESSION['usuario']; // Atualiza variável local
+                    $mensagemSucesso = "Dados atualizados com sucesso!";
+                }
             } catch (Exception $e) {
-                $pdo->rollBack();
                 $mensagemErro = $e->getMessage();
             }
         }
     }
 }
 
-// Lista de países (lista completa)
-$paises = [
-    'Brasil', 'Afeganistão', 'África do Sul', 'Albânia', 'Alemanha', 'Andorra', 'Angola', 'Antígua e Barbuda',
-    'Arábia Saudita', 'Argélia', 'Argentina', 'Armênia', 'Austrália', 'Áustria', 'Azerbaijão', 'Bahamas',
-    'Bangladesh', 'Barbados', 'Barein', 'Bélgica', 'Belize', 'Benin', 'Bielorrússia', 'Bolívia', 'Bósnia e Herzegovina',
-    'Botsuana', 'Brunei', 'Bulgária', 'Burkina Faso', 'Burundi', 'Butão', 'Cabo Verde', 'Camarões', 'Camboja',
-    'Canadá', 'Catar', 'Cazaquistão', 'Chade', 'Chile', 'China', 'Chipre', 'Colômbia', 'Comores', 'Congo',
-    'Coreia do Norte', 'Coreia do Sul', 'Costa do Marfim', 'Costa Rica', 'Croácia', 'Cuba', 'Dinamarca', 'Djibuti',
-    'Dominica', 'Egito', 'El Salvador', 'Emirados Árabes Unidos', 'Equador', 'Eritreia', 'Eslováquia', 'Eslovênia',
-    'Espanha', 'Estados Unidos', 'Estônia', 'Eswatini', 'Etiópia', 'Fiji', 'Filipinas', 'Finlândia', 'França',
-    'Gabão', 'Gâmbia', 'Gana', 'Geórgia', 'Granada', 'Grécia', 'Guatemala', 'Guiana', 'Guiné', 'Guiné Equatorial',
-    'Guiné-Bissau', 'Haiti', 'Honduras', 'Hungria', 'Iêmen', 'Ilhas Marshall', 'Ilhas Salomão', 'Índia', 'Indonésia',
-    'Irã', 'Iraque', 'Irlanda', 'Islândia', 'Israel', 'Itália', 'Jamaica', 'Japão', 'Jordânia', 'Kiribati', 'Kuwait',
-    'Laos', 'Lesoto', 'Letônia', 'Líbano', 'Libéria', 'Líbia', 'Liechtenstein', 'Lituânia', 'Luxemburgo', 'Macedônia do Norte',
-    'Madagascar', 'Malásia', 'Malaui', 'Maldivas', 'Mali', 'Malta', 'Marrocos', 'Maurícia', 'Mauritânia', 'México',
-    'Mianmar', 'Micronésia', 'Moçambique', 'Moldávia', 'Mônaco', 'Mongólia', 'Montenegro', 'Namíbia', 'Nauru', 'Nepal',
-    'Nicarágua', 'Níger', 'Nigéria', 'Noruega', 'Nova Zelândia', 'Omã', 'Países Baixos', 'Palau', 'Panamá', 'Papua-Nova Guiné',
-    'Paquistão', 'Paraguai', 'Peru', 'Polônia', 'Portugal', 'Quênia', 'Quirguistão', 'Reino Unido', 'República Centro-Africana',
-    'República Checa', 'República Democrática do Congo', 'República Dominicana', 'Romênia', 'Ruanda', 'Rússia', 'Samoa',
-    'San Marino', 'Santa Lúcia', 'São Cristóvão e Névis', 'São Tomé e Príncipe', 'São Vicente e Granadinas', 'Seicheles',
-    'Senegal', 'Serra Leoa', 'Sérvia', 'Singapura', 'Síria', 'Somália', 'Sri Lanka', 'Sudão', 'Sudão do Sul', 'Suécia',
-    'Suíça', 'Suriname', 'Tailândia', 'Taiwan', 'Tajiquistão', 'Tanzânia', 'Timor-Leste', 'Togo', 'Tonga', 'Trinidad e Tobago',
-    'Tunísia', 'Turcomenistão', 'Turquia', 'Tuvalu', 'Ucrânia', 'Uganda', 'Uruguai', 'Uzbequistão', 'Vanuatu', 'Vaticano',
-    'Venezuela', 'Vietnã', 'Zâmbia', 'Zimbábue'
-];
-sort($paises); // Ordenar alfabeticamente
-
-// Formatar data de cadastro corretamente
-$dataCadastro = 'Data não disponível';
-if (isset($usuario['data_cadastro']) && !empty($usuario['data_cadastro'])) {
-    $dataCadastro = date('d/m/Y', strtotime($usuario['data_cadastro']));
-} elseif (isset($usuario['data_cadastro_formatada']) && !empty($usuario['data_cadastro_formatada'])) {
-    $dataCadastro = date('d/m/Y', strtotime($usuario['data_cadastro_formatada']));
+// Buscar dados atualizados do usuário
+$stmt = $conexao->prepare("SELECT nome, email, telefone, cpf, foto, data_cadastro FROM usuarios WHERE id = ?");
+$stmt->bind_param("i", $usuario['id']);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($userData = $result->fetch_assoc()) {
+    $usuario = array_merge($usuario, $userData);
+    $_SESSION['usuario'] = $usuario;
 }
-?>
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>YARA - Meu Perfil</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <link rel="stylesheet" href="style.css">
-  <style>
-    /* Estilos específicos do perfil */
-    .profile-section {
-      padding: 40px 20px 60px;
-      background-color: #fff;
-    }
 
-    .profile-container {
-      max-width: 1100px;
-      margin: 0 auto;
-      display: flex;
-      gap: 40px;
-      align-items: flex-start;
-    }
+// Buscar Pedidos com detalhes dos itens
+$id_usuario = $_SESSION['usuario']['id'];
+$pedidos = [];
 
-    .profile-sidebar {
-      flex: 0 0 250px;
-      background-color: #ffe7f6;
-      padding: 25px;
-      border-radius: 8px;
-    }
-
-    .profile-sidebar h2 {
-      font-family: 'Playfair Display', serif;
-      font-size: 1.6em;
-      margin: 0 0 20px 0;
-      padding-bottom: 10px;
-      border-bottom: 1px solid #fe7db9;
-      color: #333;
-    }
-
-    .profile-nav ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    .profile-nav li a {
-      display: block;
-      padding: 12px 15px;
-      text-decoration: none;
-      color: #333;
-      font-weight: 500;
-      border-radius: 4px;
-      transition: background-color 0.2s ease, color 0.2s ease;
-      margin-bottom: 5px;
-    }
-
-    .profile-nav li a.active,
-    .profile-nav li a:hover {
-      background-color: #fe7db9;
-      color: #fff;
-    }
+try {
+    // Primeira consulta: buscar pedidos e itens
+    $sqlPedidos = "
+        SELECT p.*, 
+               GROUP_CONCAT(CONCAT(pi.produto_id, '|', pi.quantidade, '|', pi.preco_unitario) SEPARATOR ';') as itens_info
+        FROM pedidos p
+        LEFT JOIN pedido_itens pi ON p.id = pi.pedido_id
+        WHERE p.usuario_id = ?
+        GROUP BY p.id
+        ORDER BY p.data_pedido DESC
+    ";
     
-    .profile-nav li a i {
-      margin-right: 10px;
-      width: 20px;
-    }
-
-    .profile-content {
-      flex: 1;
-      background-color: #fff;
-      padding: 30px;
-      border-radius: 8px;
-      border: 1px solid #eee;
-    }
+    $stmt = $conexao->prepare($sqlPedidos);
+    $stmt->bind_param("i", $id_usuario);
+    $stmt->execute();
+    $pedidos_db = $stmt->get_result();
     
-    .profile-content h1 {
-      font-family: 'Playfair Display', serif;
-      font-size: 2.2em;
-      margin: 0 0 30px 0;
-      color: #333;
-      font-weight: 600;
-    }
-
-    .data-section .data-item {
-      margin-bottom: 20px;
-      border-bottom: 1px dashed #eee;
-      padding-bottom: 15px;
-    }
-    
-    .data-section .data-item:last-child {
-      border-bottom: none;
-      margin-bottom: 0;
-      padding-bottom: 0;
-    }
-    
-    .data-section label {
-      display: block;
-      font-weight: 600;
-      color: #777;
-      margin-bottom: 5px;
-      font-size: 0.9em;
-    }
-    
-    .data-section span {
-      font-size: 1.1em;
-      color: #333;
-    }
-
-    .edit-button {
-      display: inline-block;
-      margin-top: 30px;
-      padding: 10px 25px;
-      background-color: #f06ca2;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      font-size: 1em;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background-color 0.3s ease;
-    }
-    
-    .edit-button:hover {
-      background-color: #e3558f;
-    }
-
-    .user-avatar {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-
-    .user-avatar img, .avatar-placeholder {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      object-fit: cover;
-    }
-
-    .avatar-placeholder {
-      background: #fe7db9;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 2em;
-      font-weight: bold;
-    }
-
-    @media (max-width: 768px) {
-      .profile-container {
-        flex-direction: column;
-        gap: 20px;
-      }
-      
-      .profile-sidebar {
-        flex: 0 0 auto;
-        width: 100%;
-      }
-    }
-
-    /* Estilos para mensagens */
-    .mensagem {
-      padding: 15px;
-      margin: 20px auto;
-      border-radius: 5px;
-      text-align: center;
-      max-width: 500px;
-      display: none;
-    }
-
-    .mensagem.sucesso {
-      background: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-    }
-
-    .mensagem.erro {
-      background: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-
-    /* Estilos adicionais */
-    .usuario-logado {
-        position: relative;
-        cursor: pointer;
-    }
-    
-    .menu-usuario {
-        position: absolute;
-        top: 100%;
-        right: 0;
-        background: white;
-        border-radius: 5px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        padding: 10px 0;
-        min-width: 150px;
-        display: none;
-        z-index: 1000;
-    }
-    
-    .menu-usuario.mostrar {
-        display: block;
-    }
-    
-    .menu-usuario a {
-        display: block;
-        padding: 8px 15px;
-        text-decoration: none;
-        color: #333;
-        font-size: 12px;
-    }
-    
-    .menu-usuario a:hover {
-        background: #f5f5f5;
-    }
-    
-    .menu-usuario .sair {
-        color: #e74c3c;
-        border-top: 1px solid #eee;
-        margin-top: 5px;
-        padding-top: 8px;
-    }
-
-    /* Estilos do Modal de Edição */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      z-index: 10000;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal-overlay.mostrar {
-      display: flex;
-    }
-
-    .modal-editar {
-      background: white;
-      border-radius: 8px;
-      padding: 30px;
-      width: 90%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-      position: relative;
-    }
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      padding-bottom: 15px;
-      border-bottom: 1px solid #eee;
-    }
-
-    .modal-header h2 {
-      margin: 0;
-      color: #333;
-      font-family: 'Playfair Display', serif;
-    }
-
-    .fechar-modal {
-      background: none;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      color: #666;
-      padding: 0;
-      width: 30px;
-      height: 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .fechar-modal:hover {
-      color: #333;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    .form-group label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: 600;
-      color: #555;
-    }
-
-    .form-group input {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 14px;
-      box-sizing: border-box;
-    }
-
-    .form-group input:focus {
-      outline: none;
-      border-color: #f06ca2;
-    }
-
-    .form-acoes {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-      margin-top: 30px;
-    }
-
-    .btn {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background-color 0.3s ease;
-    }
-
-    .btn-primary {
-      background-color: #f06ca2;
-      color: white;
-    }
-
-    .btn-primary:hover {
-      background-color: #e3558f;
-    }
-
-    .btn-secondary {
-      background-color: #6c757d;
-      color: white;
-    }
-
-    .btn-secondary:hover {
-      background-color: #5a6268;
-    }
-
-    .avatar-upload {
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      margin-bottom: 20px;
-    }
-
-    .avatar-preview {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      overflow: hidden;
-      background: #ffe7f6;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      font-weight: bold;
-      color: #f06ca2;
-    }
-
-    .avatar-preview img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .upload-btn {
-      background: #f8f9fa;
-      border: 1px dashed #ddd;
-      padding: 8px 15px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all 0.3s ease;
-    }
-
-    .upload-btn:hover {
-      background: #e9ecef;
-      border-color: #f06ca2;
-    }
-
-    .senha-info {
-      font-size: 12px;
-      color: #666;
-      margin-top: 5px;
-    }
-
-    .campo-opcional {
-      opacity: 0.7;
-    }
-  </style>
-</head>
-<body>
-
-<header>
-  <div class="container">
-    <div class="top-row">
-      <div class="top-left">
-        <a id="openContact">CONTATO</a>
-        <a href="servicos.php">SERVIÇOS</a>
-      </div>
-      <div class="top-right-icons" aria-hidden="true">
-        <?php if ($_SESSION['usuario']): ?>
-          <!-- Mostrar foto do usuário se estiver logado -->
-          <div class="usuario-logado" id="usuarioLogado">
-            <?php if (!empty($_SESSION['usuario']['foto'])): ?>
-              <img src="uploads/<?php echo $_SESSION['usuario']['foto']; ?>" alt="Foto do usuário" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
-            <?php else: ?>
-              <div style="width: 32px; height: 32px; border-radius: 50%; background: #fe7db9; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                <?php echo substr($_SESSION['usuario']['nome'], 0, 1); ?>
-              </div>
-            <?php endif; ?>
-            
-            <!-- Menu do usuário -->
-            <div class="menu-usuario" id="menuUsuario">
-              <a href="perfil.php">Meu Perfil</a>
-              <a href="pedidos.php">Meus Pedidos</a>
-              <a href="favoritos.php">Favoritos</a>
-              <a href="#" class="sair" id="sairConta">Sair</a>
-            </div>
-          </div>
-        <?php else: ?>
-          <!-- Mostrar ícone de perfil se não estiver logado -->
-          <img src="imgs/perfil.png" alt="Usuário" id="openLogin">
-        <?php endif; ?>
-        <img src="imgs/localiza.png" alt="Localização">
-        <img src="imgs/sacola.png" alt="Sacola" id="carrinho">
-        <span class="carrinho-count"><?php echo array_sum($_SESSION['carrinho']); ?></span>
-      </div>
-    </div>  
-
-    <div class="logo-row">
-      <img src="imgs/yaraletra.png" alt="YARA Logo">
-    </div><br>  
-
-    <div class="menu-row">
-      <nav class="menu" role="navigation" aria-label="Menu principal">
-        <a href="index.php">INÍCIO</a>
-        <a href="sobre.php">SOBRE</a>
-        <a href="novidades.php">NOVIDADES</a>
-
-        <div class="menu-item acessorios">
-          <a id="acessorios" class="acessorios-link">ACESSÓRIOS</a>
-          <div class="dropdown">
-            <div>
-              <h4>Joias Individuais</h4>
-              <a href="produtos.php">Todos</a> 
-              <a href="produtos.php?categoria=colares">Colares</a>
-              <a href="produtos.php?categoria=piercings">Piercings</a>
-              <a href="produtos.php?categoria=aneis">Anéis</a>
-              <a href="produtos.php?categoria=brincos">Brincos</a>
-              <a href="produtos.php?categoria=pulseiras">Pulseiras</a>
-              <a href="produtos.php?categoria=braceletes">Braceletes</a>
-            </div>
-            <div>
-              <h4>Experiências</h4>
-              <a href="personalize.php">Personalize Já</a>
-              <a href="presente.php">Presente</a>
-            </div>
-          </div>
-        </div>
-
-        <!-- Ícones -->
-        <div class="menu-icons" aria-hidden="true">
-          <img src="imgs/coracao.png" alt="Favoritos" id="heartIcon">
-          
-          <!-- Barra de Pesquisa -->
-          <div class="menu-item">
-            <img src="imgs/lupa.png" alt="Buscar" id="abrirPesquisa">
-            <div class="barra-pesquisa" id="barraPesquisa">
-              <input type="text" id="inputPesquisa" placeholder="Digite o nome do produto...">
-              <div class="resultados-pesquisa" id="resultadosPesquisa"></div>
-            </div>
-          </div>
-          
-          <img src="imgs/tigra.png" alt="Tigre" class="tigre-icon">
-        </div>
-      </nav>
-    </div>
-  </div>
-</header>
-
-<!-- Mensagens de feedback -->
-<div id="mensagemFeedback" class="mensagem">
-    <?php 
-    if (isset($mensagemSucesso)) {
-        echo '<div class="mensagem sucesso">' . $mensagemSucesso . '</div>';
-    } elseif (isset($mensagemErro)) {
-        echo '<div class="mensagem erro">' . $mensagemErro . '</div>';
-    }
-    ?>
-</div>
-
-<main class="profile-section">
-    <div class="profile-container container">
-    
-        <aside class="profile-sidebar">
-            <h2>Minha Conta</h2>
-            <nav class="profile-nav">
-                <ul>
-                    <li><a href="#meus-dados" class="active"><i class="fas fa-user"></i> Meus Dados</a></li>
-                    <li><a href="pedidos.php"><i class="fas fa-box"></i> Meus Pedidos</a></li>
-                    <li><a href="enderecos.php"><i class="fas fa-map-marker-alt"></i> Endereços</a></li>
-                    <li><a href="favoritos.php"><i class="fas fa-heart"></i> Favoritos</a></li>
-                    <li><a href="#" class="sair" id="sairContaSidebar"><i class="fas fa-sign-out-alt"></i> Sair</a></li>
-                </ul>
-            </nav>
-        </aside>
-
-        <section class="profile-content">
-            <div class="user-avatar">
-                <?php if (!empty($usuario['foto'])): ?>
-                    <img src="uploads/<?php echo $usuario['foto']; ?>" alt="Foto de perfil">
-                <?php else: ?>
-                    <div class="avatar-placeholder">
-                        <?php echo substr($usuario['nome'], 0, 1); ?>
-                    </div>
-                <?php endif; ?>
-                <div>
-                    <h1>Olá, <?php echo explode(' ', $usuario['nome'])[0]; ?>!</h1>
-                    <p>Bem-vindo(a) ao seu perfil YARA</p>
-                </div>
-            </div>
-
-            <div id="meus-dados" class="data-section">
-                <h2>Meus Dados</h2>
-                <div class="data-item">
-                    <label>Nome Completo:</label>
-                    <span><?php echo htmlspecialchars($usuario['nome']); ?></span>
-                </div>
-                <div class="data-item">
-                    <label>E-mail:</label>
-                    <span><?php echo htmlspecialchars($usuario['email']); ?></span>
-                </div>
-                <div class="data-item">
-                    <label>Data de Cadastro:</label>
-                    <span><?php echo $dataCadastro; ?></span>
-                </div>
-                <button class="edit-button" id="abrirModalEditar">Editar Dados</button>
-            </div>
-        </section>
-    </div>
-</main>
-
-<!-- Modal de Edição de Dados -->
-<div class="modal-overlay" id="modalEditar">
-    <div class="modal-editar">
-        <div class="modal-header">
-            <h2>Editar Meus Dados</h2>
-            <button class="fechar-modal" id="fecharModalEditar">&times;</button>
-        </div>
+    // Processar os pedidos e seus itens
+    while ($pedido_db = $pedidos_db->fetch_assoc()) {
+        $pedido = [
+            'id' => 'YARA-' . $pedido_db['id'],
+            'id_original' => $pedido_db['id'],
+            'data' => $pedido_db['data_pedido'],
+            'status' => $pedido_db['status'],
+            'total' => floatval($pedido_db['valor_total'] ?? $pedido_db['total'] ?? 0),
+            'forma_pagamento' => $pedido_db['forma_pagamento'] ?? $pedido_db['metodo_pagamento'] ?? '',
+            'endereco_entrega' => $pedido_db['endereco_entrega'] ?? '',
+            'itens' => []
+        ];
         
-        <form id="formEditarPerfil" method="POST" enctype="multipart/form-data">
-            <input type="hidden" name="acao" value="atualizar_perfil">
-            
-            <div class="avatar-upload">
-                <div class="avatar-preview" id="avatarPreview">
-                    <?php if (!empty($usuario['foto'])): ?>
-                        <img src="uploads/<?php echo $usuario['foto']; ?>" alt="Foto atual">
-                    <?php else: ?>
-                        <?php echo substr($usuario['nome'], 0, 1); ?>
-                    <?php endif; ?>
-                </div>
-                <div>
-                    <label for="inputFoto" class="upload-btn">
-                        <i class="fas fa-camera"></i> Alterar Foto
-                    </label>
-                    <input type="file" id="inputFoto" name="foto" accept="image/*" style="display: none;">
-                    <div class="senha-info">JPG, PNG ou GIF (máx. 2MB)</div>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label for="nome">Nome Completo *</label>
-                <input type="text" id="nome" name="nome" value="<?php echo htmlspecialchars($usuario['nome']); ?>" required>
-            </div>
-
-            <div class="form-group">
-                <label for="email">E-mail *</label>
-                <input type="email" id="email" name="email" value="<?php echo htmlspecialchars($usuario['email']); ?>" required>
-            </div>
-
-            <div class="form-group">
-                <label>Alterar Senha <span class="campo-opcional">(opcional)</span></label>
-                <input type="password" name="senha_atual" placeholder="Senha atual">
-                <input type="password" name="nova_senha" placeholder="Nova senha" style="margin-top: 8px;">
-                <div class="senha-info">Deixe em branco se não quiser alterar a senha</div>
-            </div>
-
-            <div class="form-acoes">
-                <button type="button" class="btn btn-secondary" id="cancelarEdicao">Cancelar</button>
-                <button type="submit" class="btn btn-primary">Salvar Alterações</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- === Seção Newsletter === -->
-<section class="newsletter-section">
-  <div class="newsletter-container">
-    <div class="newsletter-logo">
-      <img src="imgs/logo.png" alt="Logo YARA">
-    </div>
-
-    <div class="newsletter-content">
-      <h2>Descubra primeiro todas as novidades <br> da Yara. Cadastre-se!</h2>
-      <form class="newsletter-form" id="newsletterForm">
-        <input type="email" name="email" placeholder="Digite aqui o seu e-mail" required>
-        <button type="submit" id="confirmEmailBtn">&#8594;</button>
-      </form>
-
-      <label class="checkbox">
-        <input type="checkbox" required>
-        <span>Li e concordo com a <a href="#">Política de privacidade</a></span>
-      </label>
-    </div>
-  </div>
-</section>
-
-<footer class="footer">
-  <div class="footer-container">
-    <div class="footer-col">
-      <h3>YARA</h3>
-      <p>Força e delicadeza em joias que expressam identidade e presença.</p>
-      <div class="social">
-        <a href="#"><i class="fab fa-instagram"></i></a>
-        <a href="#"><i class="fab fa-facebook"></i></a>
-        <a href="#"><i class="fab fa-whatsapp"></i></a>
-      </div>
-    </div>
-
-    <div class="footer-col">
-      <h4>YARA</h4>
-      <ul>
-        <li><a href="sobre.php">Sobre nós</a></li>
-        <li><a href="produtos.php">Coleções</a></li>
-      </ul>
-    </div>
-
-    <div class="footer-col">
-      <h4>Atendimento</h4>
-      <p><i class="fa-regular fa-envelope"></i> contato@yara.com</p>
-      <p><i class="fa-solid fa-phone"></i> (11) 99999-9999</p>
-    </div>
-  </div>
-
-  <div class="footer-bottom">
-    <p>@ 2025 Yara. Todos os direitos reservados</p>
-    </div>
-</footer>
-
-<!-- Modal de Contato Atualizado -->
-<div class="contact-overlay" id="contactOverlay" aria-hidden="true">
-  <div class="contact-modal" role="dialog" aria-modal="true" aria-labelledby="contactTitle">
-    <button class="close-x" id="closeX" aria-label="Fechar">X</button>
-
-    <img src="imgs/loginho.png" alt="Yara tigre" class="modal-logo">
-
-    <h3 id="contactTitle">Entre em Contato</h3>
-
-    <p class="intro">
-      Ficaremos honrados em ajudar com seu pedido, oferecer consultoria personalizada, criar listas de presentes e muito mais. Selecione o canal de contato de sua preferência e fale com um Embaixador YARA.
-    </p><br>
-
-    <label class="select-label" for="locationSelect">Por favor, selecione o seu país/região</label>
-    <div class="select-wrap">
-      <select id="locationSelect" aria-label="Escolha a sua localização">
-        <option value="">Escolha a sua localização:</option>
-        <?php foreach($paises as $pais): ?>
-          <option value="<?php echo $pais; ?>" <?php echo $pais === 'Brasil' ? 'selected' : ''; ?>>
-            <?php echo $pais; ?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-    </div><br>
-
-    <div class="contact-grid" aria-hidden="false">
-
-      <div>
-        <div class="contact-block">
-          <div class="block-title">Fale Conosco</div>
-          <div class="block-desc">Estamos disponíveis para lhe atender com exclusividade nos seguintes horários:</div>
-          <div class="block-meta"><i class="fa-solid fa-phone"></i> <span>(11) 4380-0328</span></div>
-          <div style="margin-top:8px;">
-            <a class="btn-outline" href="tel:+551143800328">Ligar Agora</a>
-          </div>
-        </div><br>
-
-        <div class="contact-block">
-          <div class="block-title">Escreva para Nós</div>
-          <div class="block-desc">Um embaixador YARA irá responder dentro de um dia útil.</div>
-          <div style="margin-top:8px;">
-            <button class="btn-outline" type="button" onclick="window.location.href='mailto:contato@yara.com'">Enviar Email</button>
-          </div>
-        </div><br>
-
-        <div class="contact-block">
-          <div class="block-title">Atendimento via Chat</div>
-          <div class="block-desc">De segunda a sexta, das 10h às 19h, nossos embaixadores estão prontos para ajudar.</div>
-          <div style="margin-top:8px;">
-            <button class="btn-outline" type="button" onclick="iniciarChat()">Iniciar Chat</button>
-          </div>
-        </div><br>
-
-        <div class="contact-block">
-          <div class="block-title">Fale pelo WhatsApp</div>
-          <div class="block-desc">Receba atendimento personalizado de um embaixador YARA.</div>
-          <div style="margin-top:8px;">
-            <button class="btn-outline" type="button" onclick="abrirWhatsApp()">Enviar Mensagem</button>
-          </div>
-        </div><br>
-      </div>
-
-      <div>
-        <div class="contact-block">
-          <div class="block-title">Converse com um Especialista em Joias</div>
-          <div class="block-desc">De segunda a sexta, das 10h às 19h, nossos embaixadores terão o prazer em lhe orientar.</div>
-          <div style="margin-top:8px;">
-            <button class="btn-outline" type="button" onclick="iniciarChatEspecialista()">Falar com Especialista</button>
-          </div>
-        </div><br>
-
-        <div class="contact-block">
-          <div class="block-title">Visite-nos em uma Boutique YARA</div>
-          <div class="block-desc">Descubra nossas criações em uma de nossas boutiques e viva a experiência exclusiva YARA.</div>
-          <div style="margin-top:8px;">
-            <button class="btn-outline" type="button" onclick="agendarVisita()">Agendar uma Visita</button>
-          </div>
-        </div><br>
-
-        <div class="contact-block">
-          <div class="block-title">Ajuda</div>
-          <div class="block-desc">Tem dúvidas sobre seu pedido, nossos serviços ou política de devolução? Acesse nossa central de ajuda e encontre todas as respostas.</div>
-          <div style="margin-top:8px;">
-            <button class="btn-outline" type="button" onclick="window.location.href='ajuda.php'">Central de Ajuda</button>
-          </div>
-        </div>
-      </div><br>
-
-    </div>
-
-    <div class="contact-actions" style="margin-top:12px;">
-      <button class="btn-primary" id="closeModalBtn" type="button">Fechar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal Cadastro Atualizado (com upload de foto) -->
-<div class="login-overlay" id="signupOverlay" aria-hidden="true">
-  <div class="login-modal" role="dialog" aria-modal="true" aria-labelledby="signupTitle">
-    <button class="close-x" id="closeSignupX" aria-label="Fechar">×</button>
-    <img src="imgs/loginho.png" alt="Logo YARA" class="modal-logo">
-    <h3 id="signupTitle">Crie sua conta</h3>
-    <form class="login-form" id="formCadastro" enctype="multipart/form-data">
-      <p>Nome Completo</p>
-      <input type="text" name="nome" placeholder="Seu nome" required>
-
-      <p>E-mail</p>
-      <input type="email" name="email" placeholder="seu.email@exemplo.com" required>
-
-      <p>Senha</p>
-      <input type="password" name="senha" placeholder="Mínimo 8 caracteres" required>
-
-      <p>Foto de Perfil (opcional)</p>
-      <input type="file" name="foto" accept="image/*">
-
-      <label class="checkbox">
-        <input type="checkbox" required>
-        <span>Eu concordo com os <a href="#">Termos de Uso</a> e <a href="#">Política de Privacidade</a></span>
-      </label>
-
-      <button type="submit" class="btn-primary">Cadastrar</button>
-    </form>
-    <p>Já tem uma conta? <a href="#" id="goToLogin">Faça login aqui</a></p>
-  </div>
-</div>
-
-<!-- Modal Login -->
-<div class="login-overlay" id="loginOverlay" aria-hidden="true">
-  <div class="login-modal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
-    <button class="close-x" id="closeLoginX" aria-label="Fechar">X</button>
-    <img src="imgs/loginho.png" alt="Logo YARA" class="modal-logo">
-    <h3 id="loginTitle">Faça login e encontre o poder de se expressar através de joias únicas.</h3><br>
-    <form class="login-form" id="formLogin">
-      <input type="email" name="email" placeholder="seuemail@exemplo.com" required>
-      <input type="password" name="senha" placeholder="Sua senha" required>
-      <button type="submit" class="btn-primary">Entrar</button>
-    </form>
-    <p style="text-align:center; margin: 12px 0;">
-      Ainda não tem uma conta? <a href="#" class="link-cadastro">Cadastre-se</a>
-    </p><br>
-    <button class="btn-outline" id="loginGoogle">Entrar com Google</button>
-  </div>
-</div>
-
-<script>
-// === Funções de contato ===
-function iniciarChat() {
-    window.location.href = 'chat.php';
-}
-
-function abrirWhatsApp() {
-    const numero = '5511999999999';
-    const mensagem = 'Olá, gostaria de mais informações sobre as joias YARA.';
-    const url = `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`;
-    window.open(url, '_blank');
-}
-
-function iniciarChatEspecialista() {
-    window.location.href = 'chat.php?tipo=especialista';
-}
-
-function agendarVisita() {
-    window.location.href = 'agendamento.php';
-}
-
-// === Funções JavaScript principais ===
-document.addEventListener('DOMContentLoaded', function() {
-    // --- MODAL DE EDIÇÃO DE PERFIL ---
-    const modalEditar = document.getElementById('modalEditar');
-    const abrirModalEditar = document.getElementById('abrirModalEditar');
-    const fecharModalEditar = document.getElementById('fecharModalEditar');
-    const cancelarEdicao = document.getElementById('cancelarEdicao');
-    const formEditarPerfil = document.getElementById('formEditarPerfil');
-    const inputFoto = document.getElementById('inputFoto');
-    const avatarPreview = document.getElementById('avatarPreview');
-
-    // Abrir modal
-    if (abrirModalEditar) {
-        abrirModalEditar.addEventListener('click', function() {
-            modalEditar.classList.add('mostrar');
-            document.body.style.overflow = 'hidden';
-        });
-    }
-
-    // Fechar modal
-    function fecharModal() {
-        modalEditar.classList.remove('mostrar');
-        document.body.style.overflow = '';
-    }
-
-    if (fecharModalEditar) {
-        fecharModalEditar.addEventListener('click', fecharModal);
-    }
-
-    if (cancelarEdicao) {
-        cancelarEdicao.addEventListener('click', fecharModal);
-    }
-
-    // Fechar modal ao clicar fora
-    modalEditar.addEventListener('click', function(e) {
-        if (e.target === modalEditar) {
-            fecharModal();
-        }
-    });
-
-    // Preview da foto
-    if (inputFoto) {
-        inputFoto.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    avatarPreview.innerHTML = `<img src="${e.target.result}" alt="Preview da foto">`;
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-    }
-
-    // Envio do formulário
-    if (formEditarPerfil) {
-        formEditarPerfil.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            
-            // Mostrar loading
-            const submitBtn = this.querySelector('button[type="submit"]');
-            const originalText = submitBtn.textContent;
-            submitBtn.textContent = 'Salvando...';
-            submitBtn.disabled = true;
-            
-            fetch('perfil.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.text())
-            .then(data => {
-                // Recarregar a página para ver as alterações
-                window.location.reload();
-            })
-            .catch(error => {
-                console.error('Erro:', error);
-                mostrarMensagem('Erro ao atualizar dados. Tente novamente.', 'erro');
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
-            });
-        });
-    }
-
-    // --- MENU DO USUÁRIO ---
-    const usuarioLogado = document.getElementById('usuarioLogado');
-    const menuUsuario = document.getElementById('menuUsuario');
-    const sairConta = document.getElementById('sairConta');
-
-    if (usuarioLogado && menuUsuario) {
-        usuarioLogado.addEventListener('click', function(e) {
-            e.stopPropagation();
-            menuUsuario.classList.toggle('mostrar');
-        });
-
-        // Fechar menu ao clicar fora
-        document.addEventListener('click', function() {
-            menuUsuario.classList.remove('mostrar');
-        });
-
-        // Logout
-        if (sairConta) {
-            sairConta.addEventListener('click', function(e) {
-                e.preventDefault();
-                fazerLogout();
-            });
-        }
-    }
-
-    // --- BARRA DE PESQUISA ---
-    const abrirPesquisa = document.getElementById('abrirPesquisa');
-    const barraPesquisa = document.getElementById('barraPesquisa');
-    const inputPesquisa = document.getElementById('inputPesquisa');
-    const resultadosPesquisa = document.getElementById('resultadosPesquisa');
-
-    if (abrirPesquisa) {
-        abrirPesquisa.addEventListener('click', function(e) {
-            e.stopPropagation();
-            barraPesquisa.classList.toggle('ativa');
-            if (barraPesquisa.classList.contains('ativa')) {
-                inputPesquisa.focus();
-            }
-        });
-    }
-
-    document.addEventListener('click', function(e) {
-        if (barraPesquisa && !barraPesquisa.contains(e.target) && e.target !== abrirPesquisa) {
-            barraPesquisa.classList.remove('ativa');
-        }
-    });
-
-    if (inputPesquisa) {
-        inputPesquisa.addEventListener('input', function() {
-            const termo = this.value.trim();
-            if (termo.length > 2) {
-                buscarProdutos(termo);
-            } else {
-                resultadosPesquisa.innerHTML = '';
-            }
-        });
-    }
-
-    function buscarProdutos(termo) {
-        fetch('buscar_produtos.php?termo=' + encodeURIComponent(termo))
-            .then(response => response.json())
-            .then(data => {
-                if (resultadosPesquisa) {
-                    resultadosPesquisa.innerHTML = '';
+        // Processar itens do pedido
+        if (!empty($pedido_db['itens_info'])) {
+            $itens_info = explode(';', $pedido_db['itens_info']);
+            foreach ($itens_info as $item_info) {
+                if (!empty($item_info)) {
+                    list($produto_id, $quantidade, $preco_unitario) = explode('|', $item_info);
                     
-                    if (data.success && data.produtos && data.produtos.length > 0) {
-                        data.produtos.forEach(produto => {
-                            const item = document.createElement('div');
-                            item.className = 'resultado-item';
-                            const imagemSrc = produto.imagem && produto.imagem !== '' ? 
-                                `imgs/${produto.imagem}` : 'imgs/produto-padrao.png';
-                            
-                            item.innerHTML = `
-                                <img src="${imagemSrc}" alt="${produto.nome}" onerror="this.src='imgs/produto-padrao.png'">
-                                <div class="resultado-info">
-                                    <h4>${produto.nome}</h4>
-                                    <div class="preco">R$ ${parseFloat(produto.preco).toFixed(2)}</div>
-                                </div>
-                            `;
-                            
-                            item.addEventListener('click', function() {
-                                window.location.href = `produto_detalhe.php?id=${produto.id}`;
-                            });
-                            
-                            resultadosPesquisa.appendChild(item);
-                        });
-                    } else {
-                        resultadosPesquisa.innerHTML = `
-                            <div style="padding: 20px; text-align: center; color: #666;">
-                                <i class="fas fa-search" style="font-size: 24px; margin-bottom: 10px;"></i>
-                                <p>Nenhum produto encontrado para "${termo}"</p>
-                            </div>
-                        `;
+                    // Buscar informações do produto
+                    $stmt_produto = $conexao->prepare("SELECT nome, imagem FROM produtos WHERE id = ?");
+                    $stmt_produto->bind_param("i", $produto_id);
+                    $stmt_produto->execute();
+                    $produto = $stmt_produto->get_result()->fetch_assoc();
+                    
+                    if ($produto) {
+                        $pedido['itens'][] = [
+                            'nome' => $produto['nome'],
+                            'quantidade' => intval($quantidade),
+                            'preco' => floatval($preco_unitario),
+                            'imagem' => $produto['imagem']
+                        ];
                     }
                 }
-            })
-            .catch(error => {
-                console.error('Erro na busca:', error);
-            });
-    }
-
-    // --- FORMULÁRIOS AJAX ---
-    const formLogin = document.getElementById('formLogin');
-    const formCadastro = document.getElementById('formCadastro');
-    const formNewsletter = document.getElementById('newsletterForm');
-
-    function mostrarMensagem(mensagem, tipo) {
-        const mensagemEl = document.getElementById('mensagemFeedback');
-        if (mensagemEl) {
-            mensagemEl.textContent = mensagem;
-            mensagemEl.className = `mensagem ${tipo}`;
-            mensagemEl.style.display = 'block';
-            
-            setTimeout(() => {
-                mensagemEl.style.display = 'none';
-            }, 5000);
+            }
         }
+        
+        $pedidos[] = $pedido;
     }
-
-    if (formLogin) {
-        formLogin.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('acao', 'login');
-            
-            fetch('processa_form.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    mostrarMensagem(data.message, 'sucesso');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    mostrarMensagem(data.message, 'erro');
-                }
-            });
-        });
-    }
-
-    if (formCadastro) {
-        formCadastro.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('acao', 'cadastro');
-            
-            fetch('processa_form.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    mostrarMensagem(data.message, 'sucesso');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    mostrarMensagem(data.message, 'erro');
-                }
-            });
-        });
-    }
-
-    if (formNewsletter) {
-        formNewsletter.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('acao', 'newsletter');
-            
-            fetch('processa_form.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    mostrarMensagem(data.message, 'sucesso');
-                    this.reset();
-                } else {
-                    mostrarMensagem(data.message, 'erro');
-                }
-            });
-        });
-    }
-
-    // --- MODAL DE CONTATO ---
-    const openContact = document.getElementById('openContact');
-    const contactOverlay = document.getElementById('contactOverlay');
-    const closeX = document.getElementById('closeX');
-    const closeModalBtn = document.getElementById('closeModalBtn');
-
-    function openContactModal() {
-      if (!contactOverlay) return;
-      contactOverlay.style.display = 'flex';
-      contactOverlay.setAttribute('aria-hidden', 'false');
-      const sel = document.getElementById('locationSelect');
-      if (sel) sel.focus();
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeContactModal() {
-      if (!contactOverlay) return;
-      contactOverlay.style.display = 'none';
-      contactOverlay.setAttribute('aria-hidden', 'true');
-      document.body.style.overflow = '';
-      if (openContact) openContact.focus();
-    }
-
-    if (openContact) openContact.addEventListener('click', e => { e.preventDefault(); openContactModal(); });
-    if (closeX) closeX.addEventListener('click', closeContactModal);
-    if (closeModalBtn) closeModalBtn.addEventListener('click', closeContactModal);
-    if (contactOverlay) contactOverlay.addEventListener('click', e => { if (e.target === contactOverlay) closeContactModal(); });
-
-    const modalBox = document.querySelector('.contact-modal');
-    if (modalBox) modalBox.addEventListener('click', e => e.stopPropagation());
-
-    // --- MODAIS DE LOGIN E CADASTRO ---
-    const perfilIcon = document.querySelector('.top-right-icons img[alt="Usuário"]');
-    const loginOverlay = document.getElementById('loginOverlay');
-    const signupOverlay = document.getElementById('signupOverlay');
-    const closeLoginX = document.getElementById('closeLoginX');
-    const closeSignupX = document.getElementById('closeSignupX');
-    const linkCadastro = document.querySelector('#loginOverlay .link-cadastro');
-    const goToLogin = document.getElementById('goToLogin');
-
-    function openLogin() {
-      if (!loginOverlay) return;
-      loginOverlay.style.display = 'flex';
-      loginOverlay.setAttribute('aria-hidden', 'false');
-      document.body.style.overflow = 'hidden';
-      const firstInput = loginOverlay.querySelector('input');
-      if (firstInput) firstInput.focus();
-    }
-
-    function closeLogin() {
-      if (!loginOverlay) return;
-      loginOverlay.style.display = 'none';
-      loginOverlay.setAttribute('aria-hidden', 'true');
-      document.body.style.overflow = '';
-      if (perfilIcon) perfilIcon.focus();
-    }
-
-    if (perfilIcon) perfilIcon.addEventListener('click', e => { e.preventDefault(); openLogin(); });
-    if (closeLoginX) closeLoginX.addEventListener('click', closeLogin);
-    if (loginOverlay) loginOverlay.addEventListener('click', e => { if (e.target === loginOverlay) closeLogin(); });
-    const loginInner = document.querySelector('#loginOverlay .login-modal');
-    if (loginInner) loginInner.addEventListener('click', e => e.stopPropagation());
-
-    function openSignup() {
-      if (!signupOverlay) return;
-      signupOverlay.style.display = 'flex';
-      signupOverlay.setAttribute('aria-hidden', 'false');
-      document.body.style.overflow = 'hidden';
-      const firstInput = signupOverlay.querySelector('input');
-      if (firstInput) firstInput.focus();
-    }
-
-    function closeSignup() {
-      if (!signupOverlay) return;
-      signupOverlay.style.display = 'none';
-      signupOverlay.setAttribute('aria-hidden', 'true');
-      document.body.style.overflow = '';
-    }
-
-    if (closeSignupX) closeSignupX.addEventListener('click', closeSignup);
-    if (signupOverlay) signupOverlay.addEventListener('click', e => { if (e.target === signupOverlay) closeSignup(); });
-    const signupInner = document.querySelector('#signupOverlay .login-modal');
-    if (signupInner) signupInner.addEventListener('click', e => e.stopPropagation());
-
-    if (linkCadastro) {
-      linkCadastro.addEventListener('click', e => {
-        e.preventDefault();
-        closeLogin();
-        openSignup();
-      });
-    }
-
-    if (goToLogin) {
-      goToLogin.addEventListener('click', e => {
-        e.preventDefault();
-        closeSignup();
-        openLogin();
-      });
-    }
-
-    // --- NEWSLETTER E ESC ---
-    const confirmEmailBtn = document.getElementById('confirmEmailBtn');
-    const newsletterCheckbox = document.querySelector('.newsletter-section .checkbox input');
-
-    if (confirmEmailBtn) {
-      confirmEmailBtn.addEventListener('click', e => {
-        e.preventDefault();
-        if (!newsletterCheckbox.checked) {
-          alert("Você precisa concordar com a Política de Privacidade para continuar.");
-          return;
-        }
-        openSignup();
-      });
-    }
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        if (loginOverlay && loginOverlay.style.display === 'flex') closeLogin();
-        if (signupOverlay && signupOverlay.style.display === 'flex') closeSignup();
-        if (contactOverlay && contactOverlay.style.display === 'flex') closeContactModal();
-        if (modalEditar && modalEditar.classList.contains('mostrar')) fecharModal();
-      }
-    });
-
-    // --- ÍCONES E REDIRECIONAMENTOS ---
-    const heartIcon = document.getElementById('heartIcon');
-    if (heartIcon) {
-      heartIcon.addEventListener('click', () => {
-        window.location.href = 'favoritos.php';
-      });
-    }
-
-    // --- LOGOUT ---
-    const sairContaSidebar = document.getElementById('sairContaSidebar');
     
-    function fazerLogout() {
-        if (confirm('Deseja realmente sair?')) {
-            fetch('processa_form.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'acao=logout'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    mostrarMensagem(data.message, 'sucesso');
-                    setTimeout(() => {
-                        window.location.href = 'index.php';
-                    }, 1500);
-                } else {
-                    mostrarMensagem(data.message, 'erro');
-                }
-            })
-            .catch(error => {
-                console.error('Erro:', error);
-                mostrarMensagem('Erro ao fazer logout.', 'erro');
-            });
-        }
-    }
-
-    if (sairContaSidebar) {
-        sairContaSidebar.addEventListener('click', function(e) {
-            e.preventDefault();
-            fazerLogout();
-        });
-    }
-
-// Mostrar mensagens do PHP automaticamente
-    <?php if (isset($mensagemSucesso)): ?>
-        setTimeout(() => {
-            mostrarMensagem('<?php echo $mensagemSucesso; ?>', 'sucesso');
-        }, 500);
-    <?php endif; ?>
-    
-    <?php if (isset($mensagemErro)): ?>
-        setTimeout(() => {
-            mostrarMensagem('<?php echo $mensagemErro; ?>', 'erro');
-        }, 500);
-    <?php endif; ?>
-
-});
-
-// Função para mostrar mensagens
-function mostrarMensagem(mensagem, tipo = 'sucesso') {
-  const mensagemDiv = document.getElementById('mensagemFeedback');
-  if (mensagemDiv) {
-      mensagemDiv.textContent = mensagem;
-      mensagemDiv.className = `mensagem ${tipo}`;
-      mensagemDiv.style.display = 'block';
-      
-      // Rolagem suave para a mensagem
-      mensagemDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      setTimeout(() => {
-          mensagemDiv.style.display = 'none';
-      }, 5000);
-  }
+} catch (Exception $e) {
+    $erro_pedidos = "Erro ao carregar pedidos: " . $e->getMessage();
 }
-</script>
-</script>
+
+$dataCadastro = isset($usuario['data_cadastro']) ? date('d/m/Y', strtotime($usuario['data_cadastro'])) : 'Recente';
+?>
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Minha Conta - YARA</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- SweetAlert2 para mensagens bonitas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+    <style>
+        /* === NAVBAR PADRONIZADA === */
+        .navbar-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            background-color: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .navbar-logo {
+            flex: 0 0 auto;
+        }
+
+        .navbar-logo img {
+            height: 50px;
+            width: auto;
+        }
+
+        .navbar-menu {
+            display: flex;
+            gap: 40px;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            flex: 1;
+            justify-content: center;
+        }
+
+        .navbar-menu a {
+            text-decoration: none;
+            color: #000;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            transition: color 0.3s;
+            position: relative;
+            font-weight: 500;
+        }
+
+        .navbar-menu a:hover {
+            color: #888;
+        }
+
+        .navbar-menu a::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            width: 0;
+            height: 1px;
+            background-color: #000;
+            transition: width 0.3s;
+        }
+
+        .navbar-menu a:hover::after {
+            width: 100%;
+        }
+
+        /* === LAYOUT DO PERFIL === */
+        .profile-section {
+            padding: 60px 20px;
+            background-color: #f9f9f9;
+            min-height: 80vh;
+        }
+
+        .profile-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        /* Sidebar */
+        .profile-sidebar {
+            flex: 0 0 250px;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+        }
+
+        .profile-sidebar h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.6em;
+            margin: 0 0 25px 0;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            color: #333;
+        }
+
+        .profile-nav ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .profile-nav li a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 15px;
+            text-decoration: none;
+            color: #555;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: 0.3s;
+            margin-bottom: 5px;
+        }
+
+        .profile-nav li a:hover,
+        .profile-nav li a.active {
+            background-color: #fff0f6;
+            color: #e91e63;
+        }
+
+        .profile-nav li a i {
+            width: 20px;
+            text-align: center;
+        }
+
+        /* Conteúdo */
+        .profile-content {
+            flex: 1;
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .tab-content.ativo {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* User Header */
+        .user-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 40px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 30px;
+        }
+
+        .user-avatar-lg img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #e91e63;
+        }
+
+        .user-avatar-lg .placeholder {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #e91e63, #ff4081);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: bold;
+            border: 3px solid #ff80ab;
+        }
+
+        .user-info h1 {
+            margin: 0;
+            font-size: 24px;
+            font-family: 'Playfair Display', serif;
+        }
+
+        .user-info p {
+            color: #777;
+            margin: 5px 0 0;
+        }
+
+        /* Dados */
+        .dados-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+
+        .dados-item {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #e91e63;
+        }
+
+        .dados-item label {
+            display: block;
+            font-weight: 600;
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .dados-item span {
+            font-size: 16px;
+            color: #333;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .edit-button {
+            margin-top: 30px;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #e91e63, #ff4081);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 15px;
+        }
+
+        .edit-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(233, 30, 99, 0.3);
+        }
+
+        /* Estilos da aba Pedidos */
+        .pedidos-list {
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .pedido-card {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 25px;
+            background: #fafafa;
+            transition: transform 0.3s;
+        }
+
+        .pedido-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+        }
+
+        .pedido-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .pedido-info h3 {
+            margin: 0 0 5px 0;
+            color: #333;
+            font-size: 1.2em;
+        }
+
+        .pedido-info p {
+            margin: 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .pedido-status {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-entregue {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-processando {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-enviado {
+            background: #cce7ff;
+            color: #004085;
+        }
+        
+        .status-pendente {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-pago {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-cancelado {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .pedido-itens {
+            margin-bottom: 20px;
+        }
+
+        .item-pedido {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 0;
+            border-bottom: 1px dashed #eee;
+        }
+
+        .item-pedido:last-child {
+            border-bottom: none;
+        }
+
+        .item-imagem {
+            width: 60px;
+            height: 60px;
+            border-radius: 4px;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 1px solid #eee;
+        }
+
+        .item-imagem img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .item-info {
+            flex: 1;
+        }
+
+        .item-info .nome {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .item-info .quantidade {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .item-preco {
+            font-weight: 600;
+            color: #333;
+            min-width: 100px;
+            text-align: right;
+        }
+
+        .pedido-total {
+            text-align: right;
+            font-size: 1.2em;
+            font-weight: 700;
+            color: #e91e63;
+            padding-top: 15px;
+            border-top: 2px solid #fe7db9;
+        }
+
+        .pedido-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn-acao {
+            padding: 8px 16px;
+            border: 1px solid #e91e63;
+            background: white;
+            color: #e91e63;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-acao:hover {
+            background: #e91e63;
+            color: white;
+        }
+
+        .btn-acao:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-acao:disabled:hover {
+            background: white;
+            color: #e91e63;
+        }
+
+        .empty-pedidos {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .empty-pedidos i {
+            font-size: 4em;
+            color: #ddd;
+            margin-bottom: 20px;
+        }
+
+        .empty-pedidos h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .empty-pedidos p {
+            margin-bottom: 30px;
+        }
+
+        .btn-primary {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #e91e63, #ff4081);
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #d81b60, #f50057);
+        }
+
+        .info-pagamento {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .endereco-entrega {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #666;
+            border-left: 3px solid #e91e63;
+        }
+
+        /* Modal Editar Dados */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-overlay.mostrar {
+            display: flex;
+        }
+
+        .modal-editar {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+            animation: modalFadeIn 0.3s ease;
+        }
+
+        @keyframes modalFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .fechar-modal {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+
+        .fechar-modal:hover {
+            background: #f5f5f5;
+            color: #e91e63;
+        }
+
+        .modal-editar h2 {
+            margin: 0 0 25px 0;
+            font-family: 'Playfair Display', serif;
+            color: #333;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e91e63;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+            transition: border 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #e91e63;
+            box-shadow: 0 0 0 3px rgba(233, 30, 99, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #888;
+            font-size: 12px;
+        }
+
+        .preview-foto {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-bottom: 10px;
+            border: 3px solid #e91e63;
+            display: none;
+        }
+
+        .preview-foto.visible {
+            display: block;
+        }
+
+        .btn-modal-primary {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #e91e63, #ff4081);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn-modal-primary:hover {
+            background: linear-gradient(135deg, #d81b60, #f50057);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(233, 30, 99, 0.3);
+        }
+
+        .btn-modal-secondary {
+            width: 100%;
+            padding: 12px;
+            background: transparent;
+            color: #e91e63;
+            border: 2px solid #e91e63;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn-modal-secondary:hover {
+            background: #e91e63;
+            color: white;
+        }
+
+        /* Mensagens */
+        .mensagem {
+            padding: 15px;
+            margin: 20px auto;
+            border-radius: 5px;
+            text-align: center;
+            max-width: 500px;
+            display: none;
+        }
+
+        .mensagem.sucesso {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .mensagem.erro {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .mensagem.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        @media (max-width: 768px) {
+            .profile-container {
+                flex-direction: column;
+                gap: 20px;
+            }
+            
+            .profile-sidebar {
+                width: 100%;
+            }
+
+            .pedido-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .item-pedido {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .item-preco {
+                align-self: flex-end;
+            }
+            
+            .pedido-actions {
+                flex-direction: column;
+            }
+            
+            .navbar-container {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+            }
+
+            .dados-container {
+                grid-template-columns: 1fr;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .modal-editar {
+                padding: 20px;
+                margin: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- NAVBAR -->
+    <?php include 'navbar.php'; ?>
+
+    <main class="profile-section">
+        <div class="profile-container">
+
+            <!-- MENU LATERAL -->
+            <aside class="profile-sidebar">
+                <h2>Minha Conta</h2>
+                <nav class="profile-nav">
+                    <ul>
+                        <li><a href="#dados" onclick="abrirTab('dados', this)" class="active"><i class="far fa-user"></i> Meus Dados</a></li>
+                        <li><a href="#pedidos" onclick="abrirTab('pedidos', this)"><i class="fas fa-box-open"></i> Meus Pedidos</a></li>
+                        <li><a href="enderecos.php"><i class="fas fa-map-marker-alt"></i> Endereços</a></li>
+                        <li><a href="favoritos.php"><i class="far fa-heart"></i> Favoritos</a></li>
+                        <li><a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</a></li>
+                    </ul>
+                </nav>
+            </aside>
+
+            <!-- CONTEÚDO -->
+            <section class="profile-content">
+
+                <!-- CABEÇALHO DO USUÁRIO -->
+                <div class="user-header">
+                    <div class="user-avatar-lg">
+                        <?php if (!empty($usuario['foto'])): ?>
+                            <img src="uploads/<?php echo htmlspecialchars($usuario['foto']); ?>" alt="Foto" id="currentAvatar">
+                        <?php else: ?>
+                            <div class="placeholder"><?php echo substr($usuario['nome'], 0, 1); ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="user-info">
+                        <h1>Olá, <?php echo htmlspecialchars(explode(' ', $usuario['nome'])[0]); ?>!</h1>
+                        <p>Membro desde <?php echo $dataCadastro; ?></p>
+                    </div>
+                </div>
+
+                <!-- ABA DADOS -->
+                <div id="tab-dados" class="tab-content ativo">
+                    <div class="dados-container">
+                        <div class="dados-item">
+                            <label>Nome Completo</label>
+                            <span><?php echo htmlspecialchars($usuario['nome']); ?></span>
+                        </div>
+                        <div class="dados-item">
+                            <label>E-mail</label>
+                            <span><?php echo htmlspecialchars($usuario['email']); ?></span>
+                        </div>
+                        <?php if (!empty($usuario['telefone'])): ?>
+                        <div class="dados-item">
+                            <label>Telefone</label>
+                            <span><?php echo htmlspecialchars($usuario['telefone']); ?></span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($usuario['cpf'])): ?>
+                        <div class="dados-item">
+                            <label>CPF</label>
+                            <span><?php echo htmlspecialchars($usuario['cpf']); ?></span>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <button class="edit-button" onclick="abrirModalEditar()">
+                        <i class="fas fa-pen"></i> Editar Dados
+                    </button>
+                </div>
+
+                <!-- ABA PEDIDOS -->
+                <div id="tab-pedidos" class="tab-content">
+                    <h3 style="margin-bottom:20px; font-family:'Playfair Display',serif;">Meus Pedidos</h3>
+
+                    <?php if (isset($erro_pedidos)): ?>
+                        <div class="mensagem erro" style="display: block;">
+                            <?php echo $erro_pedidos; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (empty($pedidos)): ?>
+                        <div class="empty-pedidos">
+                            <i class="fas fa-box-open"></i>
+                            <h3>Nenhum pedido encontrado</h3>
+                            <p>Você ainda não realizou nenhum pedido em nossa loja.</p>
+                            <a href="produtos.php" class="btn-primary">Explorar Produtos</a>
+                        </div>
+                    <?php else: ?>
+                        <div class="pedidos-list">
+                            <?php foreach ($pedidos as $pedido): ?>
+                            <div class="pedido-card">
+                                <div class="pedido-header">
+                                    <div class="pedido-info">
+                                        <h3>Pedido <?php echo $pedido['id']; ?></h3>
+                                        <p>Realizado em <?php echo date('d/m/Y', strtotime($pedido['data'])); ?></p>
+                                        <?php if (!empty($pedido['forma_pagamento'])): ?>
+                                        <p class="info-pagamento">
+                                            <i class="fas fa-credit-card"></i> 
+                                            <?php 
+                                            $formas_pagamento = [
+                                                'cartao_credito' => 'Cartão de Crédito',
+                                                'cartao_debito' => 'Cartão de Débito',
+                                                'boleto' => 'Boleto Bancário',
+                                                'pix' => 'PIX',
+                                                'Cartão de Crédito' => 'Cartão de Crédito',
+                                                'Cartão de Débito' => 'Cartão de Débito',
+                                                'Boleto' => 'Boleto',
+                                                'PIX' => 'PIX'
+                                            ];
+                                            echo $formas_pagamento[$pedido['forma_pagamento']] ?? $pedido['forma_pagamento'];
+                                            ?>
+                                        </p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="pedido-status status-<?php echo $pedido['status']; ?>">
+                                        <?php 
+                                        $statusText = [
+                                            'pendente' => 'Pendente',
+                                            'pago' => 'Pago',
+                                            'processando' => 'Processando',
+                                            'enviado' => 'Enviado',
+                                            'entregue' => 'Entregue',
+                                            'cancelado' => 'Cancelado'
+                                        ];
+                                        echo $statusText[$pedido['status']] ?? $pedido['status']; 
+                                        ?>
+                                    </div>
+                                </div>
+                                
+                                <?php if (!empty($pedido['endereco_entrega'])): ?>
+                                <div class="endereco-entrega">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <strong>Endereço de entrega:</strong> <?php echo htmlspecialchars($pedido['endereco_entrega']); ?>
+                                </div>
+                                <?php endif; ?>
+
+                                <div class="pedido-itens">
+                                    <?php foreach ($pedido['itens'] as $item): ?>
+                                    <div class="item-pedido">
+                                        <div class="item-imagem">
+                                            <img src="imgs/<?php echo !empty($item['imagem']) ? htmlspecialchars($item['imagem']) : 'produto-padrao.png'; ?>" 
+                                                 alt="<?php echo htmlspecialchars($item['nome']); ?>"
+                                                 onerror="this.src='imgs/produto-padrao.png'">
+                                        </div>
+                                        <div class="item-info">
+                                            <div class="nome"><?php echo htmlspecialchars($item['nome']); ?></div>
+                                            <div class="quantidade">Quantidade: <?php echo $item['quantidade']; ?></div>
+                                        </div>
+                                        <div class="item-preco">R$ <?php echo number_format($item['preco'], 2, ',', '.'); ?></div>
+                                    </div>
+                                    <?php endforeach; ?>
+                                </div>
+
+                                <div class="pedido-total">
+                                    Total: R$ <?php echo number_format($pedido['total'], 2, ',', '.'); ?>
+                                </div>
+
+                                <div class="pedido-actions">
+                                    <button class="btn-acao" onclick="window.location.href='detalhes_pedido.php?id=<?php echo $pedido['id_original']; ?>'">
+                                        <i class="fas fa-eye"></i> Ver Detalhes
+                                    </button>
+                                    <button class="btn-acao" onclick="comprarNovamente(<?php echo htmlspecialchars(json_encode($pedido['itens'])); ?>)">
+                                        <i class="fas fa-redo"></i> Comprar Novamente
+                                    </button>
+                                    <?php if ($pedido['status'] === 'entregue'): ?>
+                                    <button class="btn-acao" onclick="window.location.href='avaliacao.php?pedido_id=<?php echo $pedido['id_original']; ?>'">
+                                        <i class="fas fa-star"></i> Avaliar Produtos
+                                    </button>
+                                    <?php endif; ?>
+                                    
+                                    <?php if ($pedido['status'] === 'pendente'): ?>
+                                    <button class="btn-acao" onclick="cancelarPedido(<?php echo $pedido['id_original']; ?>)">
+                                        <i class="fas fa-times"></i> Cancelar Pedido
+                                    </button>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+            </section>
+        </div>
+    </main>
+
+    <!-- MODAL EDITAR DADOS -->
+    <div class="modal-overlay" id="modalEditar">
+        <div class="modal-editar">
+            <button class="fechar-modal" onclick="fecharModalEditar()">&times;</button>
+            <h2>Editar Dados Pessoais</h2>
+            
+            <!-- Preview da foto -->
+            <?php if (!empty($usuario['foto'])): ?>
+            <img src="uploads/<?php echo htmlspecialchars($usuario['foto']); ?>" alt="Foto atual" class="preview-foto visible" id="fotoPreview">
+            <?php else: ?>
+            <div class="preview-foto" id="fotoPreview" style="display: none;"></div>
+            <?php endif; ?>
+
+            <form method="POST" enctype="multipart/form-data" id="formEditarDados">
+                <input type="hidden" name="acao" value="atualizar_perfil">
+
+                <div class="form-group">
+                    <label for="nome">Nome Completo *</label>
+                    <input type="text" id="nome" name="nome" value="<?php echo htmlspecialchars($usuario['nome']); ?>" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="email">E-mail *</label>
+                    <input type="email" id="email" name="email" value="<?php echo htmlspecialchars($usuario['email']); ?>" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="telefone">Telefone</label>
+                        <input type="text" id="telefone" name="telefone" value="<?php echo htmlspecialchars($usuario['telefone'] ?? ''); ?>" placeholder="(11) 99999-9999">
+                    </div>
+                    <div class="form-group">
+                        <label for="cpf">CPF</label>
+                        <input type="text" id="cpf" name="cpf" value="<?php echo htmlspecialchars($usuario['cpf'] ?? ''); ?>" placeholder="000.000.000-00">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="foto">Foto de Perfil</label>
+                    <input type="file" id="foto" name="foto" accept="image/*" onchange="previewFoto(this)">
+                    <small>Formatos aceitos: JPG, PNG, GIF (Máx. 2MB)</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Alterar Senha (Opcional)</label>
+                    <input type="password" name="nova_senha" placeholder="Nova senha (mínimo 6 caracteres)">
+                </div>
+
+                <div class="form-group">
+                    <label>Confirmar com Senha Atual</label>
+                    <input type="password" name="senha_atual" placeholder="Digite sua senha atual para confirmar">
+                    <small>Necessário para alterar senha ou e-mail</small>
+                </div>
+
+                <button type="submit" class="btn-modal-primary">
+                    <i class="fas fa-save"></i> Salvar Alterações
+                </button>
+                
+                <button type="button" class="btn-modal-secondary" onclick="fecharModalEditar()">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        // Sistema de abas
+        function abrirTab(id, link) {
+            // Esconde todas as abas
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('ativo'));
+            // Remove ativo dos links
+            document.querySelectorAll('.profile-nav a').forEach(a => a.classList.remove('active'));
+
+            // Mostra a aba certa
+            document.getElementById('tab-' + id).classList.add('ativo');
+            // Ativa o link certo
+            link.classList.add('active');
+            
+            // Atualiza URL sem recarregar a página
+            history.pushState(null, null, '#' + id);
+        }
+
+        // Verificar hash na URL ao carregar
+        document.addEventListener('DOMContentLoaded', function() {
+            const hash = window.location.hash.replace('#', '');
+            if (hash) {
+                const link = document.querySelector(`.profile-nav a[href="#${hash}"]`);
+                if (link) {
+                    abrirTab(hash, link);
+                }
+            }
+            
+            // Aplicar máscaras nos inputs
+            aplicarMascaras();
+        });
+
+        // Modal de edição
+        function abrirModalEditar() {
+            document.getElementById('modalEditar').classList.add('mostrar');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function fecharModalEditar() {
+            document.getElementById('modalEditar').classList.remove('mostrar');
+            document.body.style.overflow = '';
+        }
+
+        // Fechar modal ao clicar fora
+        document.getElementById('modalEditar').addEventListener('click', function(e) {
+            if (e.target === this) {
+                fecharModalEditar();
+            }
+        });
+
+        // Fechar modal com ESC
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.getElementById('modalEditar').classList.contains('mostrar')) {
+                fecharModalEditar();
+            }
+        });
+
+        // Preview da foto
+        function previewFoto(input) {
+            const preview = document.getElementById('fotoPreview');
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.classList.add('visible');
+                    preview.style.display = 'block';
+                }
+                reader.readAsDataURL(input.files[0]);
+            } else {
+                preview.classList.remove('visible');
+                preview.style.display = 'none';
+            }
+        }
+
+        // Aplicar máscaras
+        function aplicarMascaras() {
+            // Máscara para telefone
+            const telefoneInput = document.getElementById('telefone');
+            if (telefoneInput) {
+                telefoneInput.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/\D/g, '');
+                    if (value.length > 10) {
+                        value = '(' + value.substring(0,2) + ') ' + value.substring(2,7) + '-' + value.substring(7,11);
+                    }
+                    e.target.value = value.substring(0, 15);
+                });
+            }
+
+            // Máscara para CPF
+            const cpfInput = document.getElementById('cpf');
+            // CÓDIGO NOVO CORRIGIDO
+if (value.length > 9) {
+    value = value.substring(0, 3) + '.' + value.substring(3, 6) + '.' + value.substring(6, 9) + '-' + value.substring(9, 11);
+} else if (value.length > 6) {
+    value = value.substring(0, 3) + '.' + value.substring(3, 6) + '.' + value.substring(6, 9);
+} else if (value.length > 3) {
+    value = value.substring(0, 3) + '.' + value.substring(3, 6);
+} 
+        }
+
+        // Função de logout
+        function logout() {
+            Swal.fire({
+                title: 'Sair da conta?',
+                text: 'Você será desconectado do sistema.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#e91e63',
+                cancelButtonColor: '#666',
+                confirmButtonText: 'Sim, sair',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('processa_form.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: 'acao=logout'
+                    }).then(r => r.json()).then(d => {
+                        if (d.success) {
+                            window.location.href = 'index.php';
+                        }
+                    });
+                }
+            });
+        }
+
+        // Funções da aba Pedidos
+        function comprarNovamente(itens) {
+            Swal.fire({
+                title: 'Comprar novamente?',
+                text: 'Deseja adicionar todos os itens deste pedido ao carrinho?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#e91e63',
+                cancelButtonColor: '#666',
+                confirmButtonText: 'Sim, adicionar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Aqui você implementaria a lógica para adicionar ao carrinho
+                    // Por enquanto, redirecionamos para produtos
+                    window.location.href = 'produtos.php';
+                }
+            });
+        }
+        
+        function cancelarPedido(pedidoId) {
+            Swal.fire({
+                title: 'Cancelar pedido?',
+                text: 'Esta ação não poderá ser desfeita.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#e91e63',
+                cancelButtonColor: '#666',
+                confirmButtonText: 'Sim, cancelar',
+                cancelButtonText: 'Voltar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('processa_pedido.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `acao=cancelar&pedido_id=${pedidoId}`
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Sucesso!',
+                                text: data.message,
+                                confirmButtonColor: '#e91e63'
+                            }).then(() => {
+                                window.location.reload();
+                            });
+                        } else {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Erro',
+                                text: data.message,
+                                confirmButtonColor: '#666'
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro:', error);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Erro',
+                            text: 'Erro ao cancelar pedido.',
+                            confirmButtonColor: '#666'
+                        });
+                    });
+                }
+            });
+        }
+
+        // Validação do formulário de edição
+        document.getElementById('formEditarDados').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const nome = document.getElementById('nome').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const senhaAtual = document.querySelector('input[name="senha_atual"]').value;
+            const novaSenha = document.querySelector('input[name="nova_senha"]').value;
+            
+            if (!nome || !email) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Campos obrigatórios',
+                    text: 'Nome e e-mail são obrigatórios.',
+                    confirmButtonColor: '#e91e63'
+                });
+                return;
+            }
+            
+            // Se estiver alterando senha, precisa da senha atual
+            if (novaSenha && !senhaAtual) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Senha atual necessária',
+                    text: 'Para alterar a senha, informe sua senha atual.',
+                    confirmButtonColor: '#e91e63'
+                });
+                return;
+            }
+            
+            // Se tudo ok, enviar o formulário
+            this.submit();
+        });
+
+        // Feedback de mensagens do PHP
+        <?php if (isset($mensagemSucesso)): ?>
+        Swal.fire({
+            icon: 'success',
+            title: 'Sucesso!',
+            text: '<?php echo $mensagemSucesso; ?>',
+            confirmButtonColor: '#e91e63',
+            timer: 3000,
+            timerProgressBar: true
+        });
+        <?php endif; ?>
+
+        <?php if (isset($mensagemErro)): ?>
+        Swal.fire({
+            icon: 'error',
+            title: 'Erro',
+            text: '<?php echo $mensagemErro; ?>',
+            confirmButtonColor: '#666'
+        });
+        <?php endif; ?>
+    </script>
+
 </body>
+
 </html>

@@ -58,11 +58,43 @@ $pagina_atual = basename($_SERVER['PHP_SELF']);
         <a href="../index.php" target="_blank">
             <i class="fas fa-external-link-alt"></i> Ver Loja
         </a>
-        <a href="../logout.php">
+        <button type="button" id="logoutAdmin" class="btn-sair">
             <i class="fas fa-sign-out-alt"></i> Sair
-        </a>
+        </button>
         <small style="color: #7f8c8d; margin-top: 10px; display: block;">
             © 2025 YARA Joias
         </small>
     </div>
 </nav>
+
+<script>
+document.getElementById('btnSairAdmin').addEventListener('click', function(e) {
+    e.preventDefault(); // Impede qualquer comportamento padrão (como seguir link ou enviar form)
+
+    const formData = new FormData();
+    formData.append('acao', 'logout');
+
+    // O "../" é essencial porque estamos na pasta 'admin' e queremos ir para a pasta pai
+    fetch('../processa_form.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        // Se o arquivo não for encontrado (404), o fetch avisa aqui
+        if (!response.ok) {
+            throw new Error('Arquivo processa_form.php não encontrado!');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Sucesso ou falha no logout, mandamos para a home de qualquer jeito
+        window.location.href = '../index.php';
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert("Erro técnico: " + error.message);
+        // Se der erro, tenta ir para o inicio mesmo assim
+        window.location.href = '../index.php';
+    });
+});
+</script>

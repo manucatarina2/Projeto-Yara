@@ -1,395 +1,426 @@
-// === Funções de contato ===
+// script.js - VERSÃO FINAL INTEGRADA (CEP + LOGIN + CARRINHO + FAVORITOS)
+
+// === 1. Funções Auxiliares e de Contato ===
 function iniciarChat() {
-    window.location.href = 'chat.php';
+    window.location.href = "chat.php";
+}
+
+function mostrarMensagem(mensagem, tipo) {
+    const mensagemEl = document.getElementById("mensagemFeedback");
+    if (mensagemEl) {
+        mensagemEl.textContent = mensagem;
+        mensagemEl.className = `mensagem ${tipo}`;
+        mensagemEl.style.display = "block";
+        setTimeout(() => { mensagemEl.style.display = "none"; }, 5000);
+    } else {
+        if (tipo === "erro") alert(mensagem);
+    }
 }
 
 function abrirWhatsApp() {
-    const numero = '5511999999999';
-    const mensagem = 'Olá, gostaria de mais informações sobre as joias YARA.';
+    const numero = "5511999999999";
+    const mensagem = "Olá, gostaria de mais informações sobre as joias YARA.";
     const url = `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`;
-    window.open(url, '_blank');
+    window.open(url, "_blank");
 }
 
-function iniciarChatEspecialista() {
-    window.location.href = 'chat.php?tipo=especialista';
-}
-
-function agendarVisita() {
-    window.location.href = 'agendamento.php';
-}
-
-// === Funções JavaScript principais ===
-document.addEventListener('DOMContentLoaded', function() {
-    // --- MENU DO USUÁRIO ---
-    const usuarioLogado = document.getElementById('usuarioLogado');
-    const menuUsuario = document.getElementById('menuUsuario');
-    const sairConta = document.getElementById('sairConta');
-
-    if (usuarioLogado && menuUsuario) {
-        usuarioLogado.addEventListener('click', function(e) {
-            e.stopPropagation();
-            menuUsuario.classList.toggle('mostrar');
-        });
-
-        // Fechar menu ao clicar fora
-        document.addEventListener('click', function() {
-            menuUsuario.classList.remove('mostrar');
-        });
-
-        // Logout
-        if (sairConta) {
-            sairConta.addEventListener('click', function(e) {
-                e.preventDefault();
-                
-                fetch('processa_form.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: 'acao=logout'
-                })
-                .then(response => response.json())
+// === 2. Lógica Principal ao Carregar a Página ===
+document.addEventListener("DOMContentLoaded", function () {
+    
+    // --- A. API DE CEP ---
+    const cepInput = document.getElementById("cep");
+    if (cepInput) {
+        const buscarCEP = (cep) => {
+            const campos = ['rua', 'bairro', 'cidade', 'estado'];
+            campos.forEach(id => {
+                const el = document.getElementById(id);
+                if(el) { el.value = "..."; el.disabled = true; }
+            });
+            
+            fetch(`https://viacep.com.br/ws/${cep}/json/`)
+                .then(r => r.json())
                 .then(data => {
-                    if (data.success) {
-                        mostrarMensagem(data.message, 'sucesso');
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1500);
+                    if (!data.erro) {
+                        if(document.getElementById('rua')) document.getElementById('rua').value = data.logradouro;
+                        if(document.getElementById('bairro')) document.getElementById('bairro').value = data.bairro;
+                        if(document.getElementById('cidade')) document.getElementById('cidade').value = data.localidade;
+                        if(document.getElementById('estado')) document.getElementById('estado').value = data.uf;
+                        if(document.getElementById('numero')) document.getElementById('numero').focus();
                     } else {
-                        mostrarMensagem(data.message, 'erro');
+                        alert("CEP não encontrado.");
+                        limparCamposEndereco();
                     }
+                })
+                .catch(() => {
+                    alert("Erro ao buscar CEP. Verifique sua conexão.");
+                    limparCamposEndereco();
+                })
+                .finally(() => {
+                    campos.forEach(id => {
+                        const el = document.getElementById(id);
+                        if(el) el.disabled = false;
+                    });
                 });
+        };
+
+        cepInput.addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 8) value = value.slice(0, 8);
+            if (value.length > 5) {
+                e.target.value = value.replace(/^(\d{5})(\d)/, '$1-$2');
+            } else {
+                e.target.value = value;
+            }
+            if (value.length === 8) { buscarCEP(value); }
+        });
+
+        cepInput.addEventListener('blur', function() {
+            let cep = this.value.replace(/\D/g, '');
+            if (cep.length === 8 && document.getElementById('rua').value === "") {
+                buscarCEP(cep);
+            } else if (cep.length > 0 && cep.length < 8) {
+                alert("Formato de CEP inválido.");
+            }
+        });
+
+        function limparCamposEndereco() {
+            ['rua', 'bairro', 'cidade', 'estado'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) el.value = "";
             });
         }
     }
 
-    // --- BARRA DE PESQUISA ---
-    const abrirPesquisa = document.getElementById('abrirPesquisa');
-    const barraPesquisa = document.getElementById('barraPesquisa');
-    const inputPesquisa = document.getElementById('inputPesquisa');
-    const resultadosPesquisa = document.getElementById('resultadosPesquisa');
+    // --- B. Formulários com Redirecionamento (Login/Cadastro) ---
+    const forms = document.querySelectorAll("form");
+    forms.forEach((form) => {
+        if (form.id === "formLogin" || form.id === "formCadastro" || form.classList.contains("ajax-form")) {
+            form.addEventListener("submit", function (e) {
+                e.preventDefault();
+                const formData = new FormData(this);
+
+                if (!formData.has("acao")) {
+                    if (form.id === "formLogin") formData.append("acao", "login");
+                    if (form.id === "formCadastro") formData.append("acao", "cadastro");
+                }
+
+                fetch("processa_form.php", { method: "POST", body: formData })
+                    .then((r) => r.json())
+                    .then((data) => {
+                        if (data.success) {
+                            if(typeof Swal !== 'undefined') {
+                                Swal.fire({ title: 'Sucesso!', text: data.message || "Sucesso!", icon: 'success', confirmButtonColor: '#e91e63' });
+                            } else {
+                                alert(data.message || "Sucesso!");
+                            }
+                            
+                            setTimeout(() => {
+                                if (data.redirect) window.location.href = data.redirect;
+                                else window.location.reload();
+                            }, 1000);
+                        } else {
+                            if(typeof Swal !== 'undefined') {
+                                Swal.fire({ title: 'Erro', text: data.message, icon: 'error', confirmButtonColor: '#e91e63' });
+                            } else {
+                                alert(data.message);
+                            }
+                        }
+                    })
+                    .catch((err) => console.error(err));
+            });
+        }
+    });
+
+    // --- C. Menu do Usuário e Logout ---
+    const usuarioLogado = document.getElementById("usuarioLogado");
+    const menuUsuario = document.getElementById("menuUsuario");
+    const sairConta = document.getElementById("sairConta");
+
+    if (usuarioLogado && menuUsuario) {
+        usuarioLogado.addEventListener("click", function (e) {
+            e.stopPropagation();
+            menuUsuario.classList.toggle("mostrar");
+        });
+        document.addEventListener("click", () => menuUsuario.classList.remove("mostrar"));
+        if (sairConta) {
+            sairConta.addEventListener("click", function (e) {
+                e.preventDefault();
+                fazerLogout();
+            });
+        }
+    }
+
+    // --- D. Barra de Pesquisa ---
+    const abrirPesquisa = document.getElementById("abrirPesquisa");
+    const barraPesquisa = document.getElementById("barraPesquisa");
+    const inputPesquisa = document.getElementById("inputPesquisa");
+    const resultadosPesquisa = document.getElementById("resultadosPesquisa");
 
     if (abrirPesquisa) {
-        abrirPesquisa.addEventListener('click', function(e) {
+        abrirPesquisa.addEventListener("click", function (e) {
             e.stopPropagation();
-            barraPesquisa.classList.toggle('ativa');
-            if (barraPesquisa.classList.contains('ativa')) {
-                inputPesquisa.focus();
-            }
+            barraPesquisa.classList.toggle("ativa");
+            if (barraPesquisa.classList.contains("ativa")) inputPesquisa.focus();
         });
     }
 
-    document.addEventListener('click', function(e) {
+    document.addEventListener("click", function (e) {
         if (barraPesquisa && !barraPesquisa.contains(e.target) && e.target !== abrirPesquisa) {
-            barraPesquisa.classList.remove('ativa');
+            barraPesquisa.classList.remove("ativa");
         }
     });
 
     if (inputPesquisa) {
-        inputPesquisa.addEventListener('input', function() {
+        inputPesquisa.addEventListener("input", function () {
             const termo = this.value.trim();
-            if (termo.length > 2) {
-                buscarProdutos(termo);
-            } else {
-                resultadosPesquisa.innerHTML = '';
-            }
+            if (termo.length > 2) buscarProdutos(termo);
+            else resultadosPesquisa.innerHTML = "";
         });
     }
 
-    function buscarProdutos(termo) {
-    console.log('Buscando por:', termo); // Para debug
-    
-    fetch('buscar_produtos.php?termo=' + encodeURIComponent(termo))
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Erro na rede: ' + response.status);
+    // --- E. Modais ---
+    const modalOverlays = document.querySelectorAll(".modal-overlay");
+    const closeButtons = document.querySelectorAll(".close-modal, .fa-times, .close-x");
+
+    closeButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            modalOverlays.forEach((m) => {
+                m.style.display = "none";
+                m.classList.remove("mostrar");
+            });
+            document.body.style.overflow = "";
+        });
+    });
+});
+
+// === 3. Funções Globais ===
+
+function buscarProdutos(termo) {
+    const resultadosPesquisa = document.getElementById("resultadosPesquisa");
+    fetch("buscar_produtos.php?termo=" + encodeURIComponent(termo))
+        .then((r) => r.json())
+        .then((data) => {
+            resultadosPesquisa.innerHTML = "";
+            if (data.success && data.produtos.length > 0) {
+                data.produtos.forEach((p) => {
+                    const img = p.imagem ? `imgs/${p.imagem}` : "imgs/produto-padrao.png";
+                    const item = document.createElement("div");
+                    item.className = "resultado-item";
+                    item.innerHTML = `<img src="${img}"><div><h4>${p.nome}</h4><div>R$ ${parseFloat(p.preco).toFixed(2)}</div></div>`;
+                    item.onclick = () => (window.location.href = `produto_detalhe.php?id=${p.id}`);
+                    resultadosPesquisa.appendChild(item);
+                });
+            } else {
+                resultadosPesquisa.innerHTML = '<div style="padding:20px;text-align:center">Nenhum produto encontrado</div>';
             }
-            return response.json();
         })
-        .then(data => {
-            console.log('Resposta:', data); // Para debug
-            
-            if (resultadosPesquisa) {
-                resultadosPesquisa.innerHTML = '';
-                
-                if (data.success && data.produtos && data.produtos.length > 0) {
-                    data.produtos.forEach(produto => {
-                        const item = document.createElement('div');
-                        item.className = 'resultado-item';
-                        
-                        // Verificar se a imagem existe, caso contrário usar uma padrão
-                        const imagemSrc = produto.imagem && produto.imagem !== '' ? 
-                            `imgs/${produto.imagem}` : 'imgs/produto-padrao.png';
-                        
-                        item.innerHTML = `
-                            <img src="${imagemSrc}" alt="${produto.nome}" onerror="this.src='imgs/produto-padrao.png'">
-                            <div class="resultado-info">
-                                <h4>${produto.nome}</h4>
-                                <div class="preco">R$ ${parseFloat(produto.preco).toFixed(2)}</div>
-                            </div>
-                        `;
-                        
-                        item.addEventListener('click', function() {
-                            window.location.href = `produto_detalhe.php?id=${produto.id}`;
-                        });
-                        
-                        resultadosPesquisa.appendChild(item);
+        .catch((e) => console.error(e));
+}
+
+// === FUNÇÃO DE CARRINHO (PADRONIZADA COM SWEETALERT) ===
+function adicionarAoCarrinho(idProduto) {
+    const formData = new FormData();
+    formData.append("acao", "adicionar_carrinho");
+    formData.append("produto_id", idProduto);
+
+    fetch("processa_form.php", { method: "POST", body: formData })
+        .then((r) => r.json())
+        .then((data) => {
+            if (data.success) {
+                if (typeof Swal !== "undefined") {
+                    Swal.fire({
+                        title: "Adicionado!",
+                        text: "Produto adicionado à sua sacola com sucesso.",
+                        icon: "success",
+                        confirmButtonColor: "#e91e63",
+                        confirmButtonText: 'Continuar comprando',
+                        showCancelButton: true,
+                        cancelButtonText: 'Ir para o carrinho',
+                        cancelButtonColor: '#333'
+                    }).then((result) => {
+                        if (result.dismiss === Swal.DismissReason.cancel) {
+                            window.location.href = 'carrinho.php';
+                        }
                     });
                 } else {
-                    resultadosPesquisa.innerHTML = `
-                        <div style="padding: 20px; text-align: center; color: #666;">
-                            <i class="fas fa-search" style="font-size: 24px; margin-bottom: 10px;"></i>
-                            <p>Nenhum produto encontrado para "${termo}"</p>
-                        </div>
-                    `;
+                    alert("Produto adicionado ao carrinho!");
+                    if(confirm("Ir para o carrinho?")) window.location.href = 'carrinho.php';
+                }
+                
+                // Atualiza contadores
+                const contadores = document.querySelectorAll(".cart-count");
+                contadores.forEach((c) => (c.innerText = data.total_carrinho));
+            } else {
+                // Tratamento para Login Necessário
+                if(data.require_login) {
+                    if (typeof Swal !== "undefined") {
+                        Swal.fire({
+                            title: 'Faça Login',
+                            text: data.message,
+                            icon: 'warning',
+                            confirmButtonColor: '#333',
+                            confirmButtonText: 'Ir para Login'
+                        }).then((result) => {
+                            if(result.isConfirmed) {
+                                // Tenta abrir o modal se a função existir
+                                if(typeof window.openLoginModal === 'function') window.openLoginModal();
+                                else window.location.href = 'login.php';
+                            }
+                        });
+                    } else {
+                        alert(data.message);
+                        window.location.href = 'login.php';
+                    }
+                } else {
+                    if (typeof Swal !== "undefined") {
+                        Swal.fire("Erro", data.message || "Erro ao adicionar.", "error");
+                    } else {
+                        alert("Erro: " + data.message);
+                    }
                 }
             }
         })
-        .catch(error => {
-            console.error('Erro na busca:', error);
-            if (resultadosPesquisa) {
-                resultadosPesquisa.innerHTML = `
-                    <div style="padding: 20px; text-align: center; color: #e74c3c;">
-                        <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
-                        <p>Erro ao buscar produtos. Tente novamente.</p>
-                    </div>
-                `;
+        .catch(() => {
+            if (typeof Swal !== "undefined") {
+                Swal.fire("Erro", "Erro ao conectar com servidor.", "error");
+            } else {
+                alert("Erro ao conectar com servidor.");
             }
         });
 }
 
-    // --- FORMULÁRIOS AJAX ---
-    const formLogin = document.getElementById('formLogin');
-    const formCadastro = document.getElementById('formCadastro');
-    const formNewsletter = document.getElementById('newsletterForm');
-
-    function mostrarMensagem(mensagem, tipo) {
-        const mensagemEl = document.getElementById('mensagemFeedback');
-        if (mensagemEl) {
-            mensagemEl.textContent = mensagem;
-            mensagemEl.className = `mensagem ${tipo}`;
-            mensagemEl.style.display = 'block';
-            
-            setTimeout(() => {
-                mensagemEl.style.display = 'none';
-            }, 5000);
-        }
-    }
-
-    if (formLogin) {
-        formLogin.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('acao', 'login');
-            
-            fetch('processa_form.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    mostrarMensagem(data.message, 'sucesso');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    mostrarMensagem(data.message, 'erro');
-                }
-            });
-        });
-    }
-
-    if (formCadastro) {
-        formCadastro.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('acao', 'cadastro');
-            
-            fetch('processa_form.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    mostrarMensagem(data.message, 'sucesso');
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    mostrarMensagem(data.message, 'erro');
-                }
-            });
-        });
-    }
-
-    if (formNewsletter) {
-        formNewsletter.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('acao', 'newsletter');
-            
-            fetch('processa_form.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    mostrarMensagem(data.message, 'sucesso');
-                    this.reset();
-                } else {
-                    mostrarMensagem(data.message, 'erro');
-                }
-            });
-        });
-    }
-
-    // --- MODAL DE CONTATO ---
-    const openContact = document.getElementById('openContact');
-    const contactOverlay = document.getElementById('contactOverlay');
-    const closeX = document.getElementById('closeX');
-    const closeModalBtn = document.getElementById('closeModalBtn');
-
-    function openContactModal() {
-      if (!contactOverlay) return;
-      contactOverlay.style.display = 'flex';
-      contactOverlay.setAttribute('aria-hidden', 'false');
-      const sel = document.getElementById('locationSelect');
-      if (sel) sel.focus();
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeContactModal() {
-      if (!contactOverlay) return;
-      contactOverlay.style.display = 'none';
-      contactOverlay.setAttribute('aria-hidden', 'true');
-      document.body.style.overflow = '';
-      if (openContact) openContact.focus();
-    }
-
-    if (openContact) openContact.addEventListener('click', e => { e.preventDefault(); openContactModal(); });
-    if (closeX) closeX.addEventListener('click', closeContactModal);
-    if (closeModalBtn) closeModalBtn.addEventListener('click', closeContactModal);
-    if (contactOverlay) contactOverlay.addEventListener('click', e => { if (e.target === contactOverlay) closeContactModal(); });
-
-    const modalBox = document.querySelector('.contact-modal');
-    if (modalBox) modalBox.addEventListener('click', e => e.stopPropagation());
-
-    // --- MODAIS DE LOGIN E CADASTRO ---
-    const perfilIcon = document.querySelector('.top-right-icons img[alt="Usuário"]');
-    const loginOverlay = document.getElementById('loginOverlay');
-    const signupOverlay = document.getElementById('signupOverlay');
-    const closeLoginX = document.getElementById('closeLoginX');
-    const closeSignupX = document.getElementById('closeSignupX');
-    const linkCadastro = document.querySelector('#loginOverlay .link-cadastro');
-    const goToLogin = document.getElementById('goToLogin');
-
-    function openLogin() {
-      if (!loginOverlay) return;
-      loginOverlay.style.display = 'flex';
-      loginOverlay.setAttribute('aria-hidden', 'false');
-      document.body.style.overflow = 'hidden';
-      const firstInput = loginOverlay.querySelector('input');
-      if (firstInput) firstInput.focus();
-    }
-
-    function closeLogin() {
-      if (!loginOverlay) return;
-      loginOverlay.style.display = 'none';
-      loginOverlay.setAttribute('aria-hidden', 'true');
-      document.body.style.overflow = '';
-      if (perfilIcon) perfilIcon.focus();
-    }
-
-    if (perfilIcon) perfilIcon.addEventListener('click', e => { e.preventDefault(); openLogin(); });
-    if (closeLoginX) closeLoginX.addEventListener('click', closeLogin);
-    if (loginOverlay) loginOverlay.addEventListener('click', e => { if (e.target === loginOverlay) closeLogin(); });
-    const loginInner = document.querySelector('#loginOverlay .login-modal');
-    if (loginInner) loginInner.addEventListener('click', e => e.stopPropagation());
-
-    function openSignup() {
-      if (!signupOverlay) return;
-      signupOverlay.style.display = 'flex';
-      signupOverlay.setAttribute('aria-hidden', 'false');
-      document.body.style.overflow = 'hidden';
-      const firstInput = signupOverlay.querySelector('input');
-      if (firstInput) firstInput.focus();
-    }
-
-    function closeSignup() {
-      if (!signupOverlay) return;
-      signupOverlay.style.display = 'none';
-      signupOverlay.setAttribute('aria-hidden', 'true');
-      document.body.style.overflow = '';
-    }
-
-    if (closeSignupX) closeSignupX.addEventListener('click', closeSignup);
-    if (signupOverlay) signupOverlay.addEventListener('click', e => { if (e.target === signupOverlay) closeSignup(); });
-    const signupInner = document.querySelector('#signupOverlay .login-modal');
-    if (signupInner) signupInner.addEventListener('click', e => e.stopPropagation());
-
-    if (linkCadastro) {
-      linkCadastro.addEventListener('click', e => {
-        e.preventDefault();
-        closeLogin();
-        openSignup();
-      });
-    }
-
-    if (goToLogin) {
-      goToLogin.addEventListener('click', e => {
-        e.preventDefault();
-        closeSignup();
-        openLogin();
-      });
-    }
-
-    // --- NEWSLETTER E ESC ---
-    const confirmEmailBtn = document.getElementById('confirmEmailBtn');
-    const newsletterCheckbox = document.querySelector('.newsletter-section .checkbox input');
-
-    if (confirmEmailBtn) {
-      confirmEmailBtn.addEventListener('click', e => {
-        e.preventDefault();
-        if (!newsletterCheckbox.checked) {
-          alert("Você precisa concordar com a Política de Privacidade para continuar.");
-          return;
-        }
-        openSignup();
-      });
-    }
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        if (loginOverlay && loginOverlay.style.display === 'flex') closeLogin();
-        if (signupOverlay && signupOverlay.style.display === 'flex') closeSignup();
-        if (contactOverlay && contactOverlay.style.display === 'flex') closeContactModal();
-      }
+function fazerLogout() {
+    fetch("processa_form.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "acao=logout",
+    })
+    .then((r) => r.json())
+    .then((data) => {
+        if (data.success) window.location.href = "login.php";
     });
+}
 
-    // --- ÍCONES E REDIRECIONAMENTOS ---
-    const heartIcon = document.getElementById('heartIcon');
-    if (heartIcon) {
-      heartIcon.addEventListener('click', () => {
-        window.location.href = 'favoritos.html';
-      });
+// Funções para Favoritos
+function toggleFavorito(event, element, idProduto) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
     }
 
-    const loginForm = document.querySelector('#loginOverlay .login-form');
-    if (loginForm) {
-      loginForm.addEventListener('submit', e => {
-        e.preventDefault();
-        window.location.href = 'perfil.html';
-      });
+    const formData = new FormData();
+    formData.append("acao", "toggle_favorito");
+    formData.append("produto_id", idProduto);
+
+    fetch("processa_form.php", { method: "POST", body: formData })
+        .then((r) => r.json())
+        .then((data) => {
+            if (data.success) {
+                if (typeof Swal !== "undefined") {
+                    const msg = data.favoritado ? "Adicionado aos favoritos!" : "Removido dos favoritos.";
+                    const icon = data.favoritado ? "success" : "info";
+                    Swal.fire({ toast: true, position: "top-end", icon: icon, title: msg, showConfirmButton: false, timer: 1500 });
+                }
+
+                // Alterna ícone
+                const icon = element.querySelector("i");
+                if (icon) {
+                    if (data.favoritado) {
+                        icon.classList.remove("far"); icon.classList.add("fas"); icon.style.color = "#e91e63";
+                    } else {
+                        icon.classList.remove("fas"); icon.classList.add("far"); icon.style.color = "";
+                    }
+                }
+            } else {
+                // Se pedir login
+                if(data.message.includes("login")) {
+                    if (typeof Swal !== "undefined") {
+                        Swal.fire({
+                            title: 'Faça Login', text: data.message, icon: 'warning', confirmButtonColor: '#333', confirmButtonText: 'Login'
+                        }).then((res) => {
+                            if(res.isConfirmed) {
+                                if(typeof window.openLoginModal === 'function') window.openLoginModal();
+                                else window.location.href = 'login.php';
+                            }
+                        });
+                    } else {
+                        alert(data.message);
+                    }
+                }
+            }
+        })
+        .catch(() => alert("Erro ao processar favorito."));
+}
+
+// === FUNÇÕES DO CARRINHO (ATUALIZAR QTD/REMOVER) ===
+function atualizarQtd(idProduto, delta) {
+    const input = document.getElementById(`qtd-${idProduto}`);
+    let novaQtd = parseInt(input.value) + delta;
+
+    if (novaQtd <= 0) {
+        removerDoCarrinho(idProduto);
+        return;
     }
 
-    const signupForm = document.querySelector('#signupOverlay .login-form');
-    if (signupForm) {
-      signupForm.addEventListener('submit', e => {
-        e.preventDefault();
-        window.location.href = 'perfil.html';
-      });
-    }
-});
+    const formData = new FormData();
+    formData.append("acao", "atualizar_carrinho");
+    formData.append("produto_id", idProduto);
+    formData.append("quantidade", novaQtd);
+
+    fetch("processa_form.php", { method: "POST", body: formData })
+        .then((r) => r.json())
+        .then((data) => {
+            if (data.success) location.reload();
+            else alert(data.message);
+        });
+}
+
+f// Função para remover item com SweetAlert
+function removerDoCarrinho(idProduto) {
+    Swal.fire({
+        title: "Tem certeza?",
+        text: "Você quer retirar este produto da sua sacola?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#e91e63", // Rosa YARA
+        cancelButtonColor: "#333",     // Preto
+        confirmButtonText: "Sim, remover",
+        cancelButtonText: "Cancelar",
+        reverseButtons: true // Inverte a ordem para ficar mais intuitivo
+    }).then((result) => {
+        if (result.isConfirmed) {
+            executarRemocao(idProduto);
+        }
+    });
+}
+
+// Função auxiliar que faz a remoção real
+function executarRemocao(idProduto) {
+    const formData = new FormData();
+    formData.append("acao", "atualizar_carrinho");
+    formData.append("produto_id", idProduto);
+    formData.append("quantidade", 0); // 0 significa remover
+
+    fetch("processa_form.php", { method: "POST", body: formData })
+        .then((r) => r.json())
+        .then((data) => {
+            if (data.success) {
+                // Sucesso: Recarrega a página para atualizar os totais
+                Swal.fire({
+                    title: "Removido!",
+                    text: "O item foi removido.",
+                    icon: "success",
+                    confirmButtonColor: "#e91e63",
+                    timer: 1000,
+                    showConfirmButton: false
+                }).then(() => {
+                    location.reload();
+                });
+            } else {
+                Swal.fire("Erro", data.message, "error");
+            }
+        })
+        .catch(() => {
+            Swal.fire("Erro", "Erro ao conectar com o servidor.", "error");
+        });
+}
